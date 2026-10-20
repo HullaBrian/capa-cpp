@@ -216,7 +216,7 @@ This path always writes to stdout; `-o` is not read.
 ### IDA Pro Plugin
 Open an x86/x64 binary with the plugin loaded, choose `Edit > Plugins > CAPA C++ > Analyze`, and
 give the path to a capa ruleset. The plugin remembers that path, so other databases start from it
-(`capa rules directory...` changes it). When analysis completes, the matches appear as a
+(`CAPA Rules Directory...` changes it). When analysis completes, the matches appear as a
 hierarchy.
 
 ![](assets/IDA-Matches.png)

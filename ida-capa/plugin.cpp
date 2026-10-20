@@ -145,7 +145,7 @@ void PluginCtx::register_actions() {
                                                 "Remove capa's annotations, restoring the "
                                                 "colours and comments it changed", -1));
 
-    register_action(ACTION_DESC_LITERAL_PLUGMOD(ACTION_RULES, "capa rules directory...",
+    register_action(ACTION_DESC_LITERAL_PLUGMOD(ACTION_RULES, "CAPA Rules Directory...",
                                                 &m_rules, this, nullptr,
                                                 "Choose which capa rules to load", -1));
     register_action(ACTION_DESC_LITERAL_PLUGMOD(ACTION_CLEAR, "Clear capa results", &m_clear,
