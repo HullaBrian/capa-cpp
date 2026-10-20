@@ -4,28 +4,46 @@
 >This project was entirely generated using Claude. I performed testing for my own use cases, but
 > you may run into issues. If you do, feel free to open an issue on this repository!
 
-A targeted C++ reimplementation of [capa](https://github.com/mandiant/capa), Mandiant's tool for
-identifying capabilities in executable code. It loads native capa rules and aims to produce the
-same matches for the use cases below. It is mainly meant to be driven by other tools, such as
-ttd-capa, and to run as an IDA plugin. Running it by hand on TTD traces works but needs the files
-those tools produce.
+A C++ port of [capa](https://github.com/mandiant/capa), Mandiant's tool for identifying
+capabilities in executable code. It loads the YAML rules from
+[capa-rules](https://github.com/mandiant/capa-rules) unchanged, and **same rules + same features =
+the same JSON result document as capa**. capa (the Python implementation) is the
+reference; any difference from it is a bug. See [Verifying parity](#verifying-parity) for how
+that is checked and what currently passes.
 
-Feature-extractor backends:
-- Microsoft's Time Travel Debugging (TTD)
+It is also driven by other tools, such as ttd-capa, and runs as an IDA plugin.
+
+Inputs:
+- capa freeze files (`.frz`) from any capa backend: vivisect, IDA, dnfile (.NET), CAPE, DRAKVUF, VMRay, ...
+- Microsoft's Time Travel Debugging (TTD) reports
 - Windows process memory dumps
-- Windows x86/x64 PE files (**IDA Pro only**)
+- Windows x86/x64 PE files (**IDA Pro only**: the plugin, or headless through idalib)
 
 ## How it works
 
 Each backend extracts features, such as API calls, strings and numbers, and a common engine
-matches rules against them.
+matches rules against them. The engine is a self-contained library, `capa-core`, with no
+analysis backend in it: rules in, features in, result document out.
 
 | Input | Backend | Scopes |
 |---|---|---|
+| capa freeze file (`.frz`) | none: replays features another backend extracted (capa's `NullFeatureExtractor`) | static or dynamic, as frozen |
 | TTD report JSON (from `ttd-capa`) | Parses recorded API calls | process / thread / span of calls / call |
 | TTD `--scan-code` manifest + `.bin` snapshots | Disassembles reconstructed code (unpacked, injected, JIT'd) with [Zydis](https://github.com/zyantific/zydis) | file / function / basic block / instruction |
 | Process minidump (`.dmp`) | Parses loaded modules and executable memory, disassembles with Zydis | file / function / basic block / instruction |
 | IDA database | uses IDA's CFG, imports, exports, strings and FLIRT names | file / function / basic block / instruction |
+
+### Layout
+
+| Directory | What |
+|---|---|
+| `capa-core/` | static library: address/feature model, rule parser (incl. capa's optimizer and `com/` database), matcher, static and dynamic capability drivers, freeze format, result document. No backend, no Zydis, no IDA SDK. |
+| `capa-cpp/` | `capa-cpp.exe`: the CLI and the TTD, TTD-code-scan and minidump backends (plus the IDA backend sources the IDA projects compile) |
+| `capa-tests/` | `capa-tests.exe`: capa's language-agnostic test suites run against `capa-core` |
+| `capa-idalib/` | `capa-idalib.exe`: the IDA backend headless through idalib (capa's `-b ida` equivalent) |
+| `ida-capa/` | the IDA Pro plugin |
+| `tests/fixtures/` | capa's matcher and feature fixtures, vendored from mandiant/capa |
+| `scripts/` | parity tooling (`parity.py`, `compare_results.py`) and the COM database generator |
 
 ## Requirements
 
@@ -49,24 +67,29 @@ matches rules against them.
 ## Building
 
 Builds are located in `build/<Configuration>/`
-- **`capa-cpp.exe`**: standalone CLI for TTD traces and Windows process minidumps
+- **`capa-core.lib`**: the engine, as a static library to embed
+- **`capa-cpp.exe`**: standalone CLI for freeze files, TTD traces and Windows process minidumps
+- **`capa-tests.exe`**: capa's matcher fixtures and capa-cpp's own checks
 - **`ida-capa.dll`**: IDA Pro 9.x plugin that runs capa against the open database
+- **`capa-idalib.exe`**: capa on a PE file through IDA, headless (needs an IDA installation with idalib)
 
-### CLI (`capa-cpp.exe`)
+### CLI, library and tests
 
-Dependencies are `nlohmann-json`, `yaml-cpp` and `zydis`, linked statically, so the exe has
-no runtime dependencies.
+Dependencies are `nlohmann-json`, `yaml-cpp`, `zlib` and `zydis`, linked statically, so the
+exes have no runtime dependencies.
 
 ```sh
-vcpkg install --triplet x64-windows-static --x-manifest-root=capa-cpp
-MSBuild capa-cpp/capa-cpp.vcxproj -p:Configuration=Release -p:Platform=x64
+vcpkg install --triplet x64-windows-static --x-manifest-root=capa-cpp --x-install-root=capa-cpp/vcpkg_installed
+./build.sh Release          # capa-core.lib, capa-cpp.exe, capa-tests.exe
+./build.sh test Release     # ... and run capa-tests
 ```
 
-### IDA plugin (`ida-capa.dll`)
+### IDA plugin (`ida-capa.dll`) and `capa-idalib.exe`
 
 ```powershell
-vcpkg install --triplet x64-windows-static-md --x-manifest-root=ida-capa
+vcpkg install --triplet x64-windows-static-md --x-manifest-root=ida-capa --x-install-root=ida-capa/vcpkg_installed
 .\ida-capa\build.ps1
+MSBuild capa-idalib\capa-idalib.vcxproj /p:Configuration=Release /p:Platform=x64 /m:1
 ```
 
 ### IDA plugin on Linux (`ida-capa.so`)
@@ -91,9 +114,20 @@ installed somewhere else.
 
 ## Usage
 ### Command Line (`capa-cpp.exe`)
-The command line accepts **TTD reports or Windows process memory dumps**. It does not read a raw
-TTD trace: ttd-capa turns the trace into a JSON report and, for code scanning, a code manifest and
-memory snapshots.
+The command line accepts **capa freeze files, TTD reports or Windows process memory dumps**. It
+does not read a raw TTD trace: ttd-capa turns the trace into a JSON report and, for code
+scanning, a code manifest and memory snapshots.
+
+A freeze file holds the features some backend extracted from one sample; capa writes one with
+`python -m capa.features.freeze <sample> <out.frz>` (any of its backends: `-b vivisect`,
+`-b ida`, `-f cape`, ...). capa-cpp matches it exactly as capa does, and writes capa's result
+document. `-r` may be repeated, as in capa.
+
+```sh
+capa-cpp <sample.frz> -r <rules-dir>                    # capability table
+capa-cpp <sample.frz> -r <rules-dir> -vv                # with match trees
+capa-cpp <sample.frz> -r <rules-dir> -j -o out.json     # capa's result document
+```
 
 ```sh
 # TTD dynamic: report of recorded API calls
@@ -136,8 +170,17 @@ The four after `--msgpack` are what keeps a large trace's output manageable.
 | `--sparse-evidence` | emit a match whose tree was dropped as a bare address rather than an empty placeholder |
 | `--max-match-trees <n>` | evidence trees kept per rule (default 256; `0` keeps all) |
 | `--top-level-calls` | match only calls made outside every other recorded call on their thread, using each call's `returnPosition` |
+| `--dump-freeze <out.frz>` | write the report's features as a capa freeze file and exit; needs no rules |
 
 Unknown options are rejected rather than ignored.
+
+TTD has no counterpart in capa, so its defaults are tuned for very large traces: the feature
+filter is on (which changes only the reported feature counts, flagged as
+`feature_counts.filtered`), and at most 256 match trees per rule are kept (the rest become
+`"truncated": true` stubs). Those two members, and everything `--matches-only`,
+`--match-evidence` and `--sparse-evidence` produce, are capa-cpp extensions outside capa's
+schema. With `--no-feature-filter --max-match-trees 0` the document is exactly what capa writes
+for the same features: `--dump-freeze` the report and run capa on the freeze file to see it.
 
 #### Flags: TTD Code Manifests
 
@@ -178,30 +221,79 @@ The plugin can also annotate matches in the database with highlighting and comme
 
 ![](assets/IDA-Annotation.png)
 
+### Headless IDA (`capa-idalib.exe`)
+capa's preferred verification backend is IDA through idalib: with the same analysis under both
+implementations, any difference in the output belongs to the port. `capa-idalib` opens the
+sample the way capa's `-b ida` backend does (Lumina disabled, resources loaded) and runs
+capa-cpp's IDA extractor over it.
+
+```sh
+capa-idalib <sample.exe> -r <rules-dir> [-j | -vv] [-o out.json]
+capa-idalib <sample.exe> --dump-freeze out.frz     # compare with capa's own `-b ida` freeze
+```
+
+It needs an IDA Pro 9.x installation with idalib. It has been built and link-checked, but not
+yet run against a live IDA.
+
+## Verifying parity
+
+The contract: same rules + same binary + same backend =
+same JSON output, with only timestamps and run metadata allowed to differ. Three suites check it,
+all built on capa's own test data:
+
+| Check | What it compares | Status |
+|---|---|---|
+| `capa-tests match-fixtures` | capa's 106 data-driven matcher fixtures (`tests/fixtures/matcher`): rule + feature listing + exact expected matches, with capa's "paranoid" indexed-vs-naive matcher check at every scope | 106/106 pass |
+| `scripts/parity.py` | result documents from capa and capa-cpp for the same freeze file and rules, compared with `compare_results.py` | equivalent for all 9 inputs tried (see below) |
+| `capa-tests feature-fixtures` | capa's backend feature fixtures (`tests/fixtures/features`) evaluated against a backend's freeze file | all selected fixtures pass for capa's IDA and vivisect freezes |
+| `capa-tests freeze-roundtrip` | load + re-write of freeze files | byte-identical to capa 9.4.0's writer |
+
+The parity inputs were capa-testfiles' feature snapshots (vivisect PE32, PE64 and ELF, dnfile
+.NET, and **IDA** for mimikatz) plus three CAPE sandbox reports frozen with capa, against
+capa-rules at `805f9ea`. The same ruleset loads identically: 1,054 rules, 1,397 with subscope
+rules extracted, the same counts per scope as capa.
+
+```sh
+pip install flare-capa            # the reference implementation
+./build.sh test Release
+python scripts/parity.py --capa-cpp build/Release/capa-cpp.exe --rules <capa-rules> <files.frz>
+build/Release/capa-tests.exe feature-fixtures --backend idalib --include-tag static \
+    --exclude-tag dotnet --exclude-tag ghidra --freeze mimikatz=<mimikatz-exe-ida.frz>
+```
+
+`compare_results.py` canonicalizes only what capa itself leaves unordered (location sets, and the
+children it splices under a `match:` in set order) and the subscope rule names capa generates
+from a fresh UUID on every run; everything else must be identical.
+[docs/parity-notes.md](docs/parity-notes.md) records the capa behaviors that took care to
+reproduce, and why.
+
 ## Supported
 
-- capa's rule format, including subscopes. About 1,049 of capa's 1,055 rule files load.
+- capa's rule format in full: every rule in capa-rules loads, including `com/class`,
+  `com/interface` and bare `property` features, and rules are parsed with PyYAML's typing of
+  values, validated per scope, and optimized as capa does.
+- capa's freeze format, static and dynamic, read and written.
+- capa's result document, member for member.
+- Any capa backend's features through freeze files, including .NET (dnfile) and the sandbox
+  formats (CAPE, DRAKVUF, VMRay).
 - TTD static and dynamic analysis of x86/x64 traces given the proper manifests/reports
 - Process minidumps: full x86/x64 dumps, including private RWX shellcode regions.
 
 ## Not supported
 
-- .NET assemblies: capa's `dnfile` backend isn't ported, so rules that need
-  `format: dotnet`, `class:` or `namespace:` never match. The IDA plugin warns when it
-  detects a .NET assembly.
-- `com/` features and the bare `property` key: rules that use them are skipped with a
-  warning.
-- Other backends: Binary Ninja, Ghidra, vivisect/PE files on disk, and the sandbox
-  formats (CAPE, DRAKVUF, VMRay).
+- Native extraction of .NET assemblies, ELF, and PE files on disk without IDA: capa's dnfile,
+  vivisect, Binary Ninja and Ghidra backends aren't ported (their freeze files work). The IDA
+  plugin warns when it detects a .NET assembly.
+- Native parsing of sandbox reports (CAPE, DRAKVUF, VMRay): freeze them with capa first.
 - Minidumps without memory (`MiniDumpNormal`) are refused.
-- JSON output differences: match trees aren't spliced with `match:` references, and
-  subscope rules are named `…/subscope-N` instead of UUIDs.
-- Plain-text tables instead of capa's Rich formatting.
+- Regular expressions are Python's, run on `std::regex` through a translation layer
+  (`capa-core/src/pyregex.h`); constructs with no ECMAScript equivalent (lookbehind, atomic
+  groups) are reported when the rules load and never match. No capa rule uses one today.
+- Plain-text tables instead of capa's Rich formatting (only the JSON is part of the contract).
 - IDA plugin limits:
   - x86/x64 only.
   - No ELF OS detection.
   - No rule generator.
-  - No headless/idalib mode.
   - Matches with a MAEC analysis conclusion aren't filtered out.
   - The UI uses IDA's own form, chooser and dirtree instead of Qt.
   - It has been built and link-checked, but not yet tested inside a running IDA.
