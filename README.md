@@ -29,11 +29,20 @@ matches rules against them.
 
 ## Requirements
 
-- To compile:
+- To compile `capa-cpp.exe` and `ida-capa.dll` (Windows):
   - Windows x64
   - Visual Studio 2022 or 2026 (MSVC v143/v145, C++ 20)
   - vcpkg (the copy bundled with Visual Studio works)
   - For the IDA Pro plugin: the ida-sdk (currently added as a submodule)
+- To compile `ida-capa.so` (Linux, IDA Pro plugin only -- `capa-cpp.exe`'s TTD/minidump
+  CLI is not ported to Linux):
+  - Linux x64
+  - CMake 3.25+, a C++20 compiler (GCC or Clang)
+  - `nlohmann-json` and `yaml-cpp` dev packages (`sudo dnf install json-devel
+    yaml-cpp-devel yaml-cpp-static` on Fedora -- `-devel` for headers, `-static` for
+    the static archive; `sudo apt install nlohmann-json3-dev libyaml-cpp-dev` on
+    Debian/Ubuntu)
+  - the ida-sdk submodule, which ships prebuilt Linux SDK libraries
 - To use:
   - capa [rules](https://github.com/mandiant/capa-rules)
 
@@ -59,6 +68,26 @@ MSBuild capa-cpp/capa-cpp.vcxproj -p:Configuration=Release -p:Platform=x64
 vcpkg install --triplet x64-windows-static-md --x-manifest-root=ida-capa
 .\ida-capa\build.ps1
 ```
+
+### IDA plugin on Linux (`ida-capa.so`)
+
+`nlohmann-json` is header-only, and `yaml-cpp` links statically into the plugin
+(when a static build of it is available), so the built `.so` needs nothing beyond
+IDA itself on the target system.
+
+```sh
+sudo dnf install json-devel yaml-cpp-devel yaml-cpp-static   # or: apt install nlohmann-json3-dev libyaml-cpp-dev
+./ida-capa/build.sh              # build/ida-capa/ida-capa.so
+./ida-capa/build.sh --install    # also copy it into ~/.idapro/plugins
+```
+
+Debian/Ubuntu don't package a static `libyaml-cpp.a`; there, the build falls back to
+linking `libyaml-cpp.so`, which then must also be installed on whatever system runs
+the plugin.
+
+The build locates the ida-sdk submodule automatically (`ida-capa/../ida-sdk/src`);
+point elsewhere with `-DIDASDK=<path>` or the `IDASDK` environment variable if it's
+installed somewhere else.
 
 ## Usage
 ### Command Line (`capa-cpp.exe`)

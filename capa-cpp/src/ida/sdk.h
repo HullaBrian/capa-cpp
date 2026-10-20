@@ -11,9 +11,9 @@
 //     (the plugin's pch.h does exactly that).
 #pragma once
 
-#ifndef __NT__
-#define __NT__
-#endif
+// pro.h auto-detects __NT__/__LINUX__/__MAC__ from the compiler's own predefined
+// macros when none of the three is already set, so nothing needs to be forced here
+// on any platform.
 
 // Keep pro.h from redefining fgetc/fopen/strcpy/... to dont_use_* stubs, which would
 // break every standard header included after it.
@@ -27,6 +27,7 @@
 #define NO_OBSOLETE_FUNCS
 #endif
 
+#if defined(_WIN32)
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif
@@ -38,6 +39,7 @@
 // wingdi.h defines ABSOLUTE as 1, which collides with capa's AddressType::ABSOLUTE
 // (and would with any enumerator of that name). Nothing here draws anything.
 #undef ABSOLUTE
+#endif  // _WIN32
 
 #include <pro.h>
 

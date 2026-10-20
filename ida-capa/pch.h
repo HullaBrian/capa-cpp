@@ -2,7 +2,8 @@
 //
 // Include ordering matters, and it is the same trap ida-dotnet documents:
 //
-//   1. Windows first, with lean/nominmax so it does not clobber the SDK or the STL.
+//   1. Windows first (Windows only), with lean/nominmax so it does not clobber the
+//      SDK or the STL. Nothing here is needed on Linux/Mac.
 //   2. nlohmann/json and yaml-cpp BEFORE the IDA SDK. pro.h carries a VS2010
 //      compatibility shim, `#define strtoull _strtoui64`; those headers call
 //      std::strtoull, which the macro rewrites into the non-existent
@@ -13,6 +14,7 @@
 #ifndef IDA_CAPA_PCH_H
 #define IDA_CAPA_PCH_H
 
+#if defined(_WIN32)
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif
@@ -20,6 +22,7 @@
 #define NOMINMAX
 #endif
 #include <windows.h>
+#endif  // _WIN32
 
 #include <nlohmann/json.hpp>
 #include <yaml-cpp/yaml.h>
