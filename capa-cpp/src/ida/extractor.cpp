@@ -13,7 +13,7 @@ IdaExtractor::IdaExtractor(bool skip_system_modules)
     // If this database was opened on a .dmp, read the module export and import tables
     // out of it. Without them `api:` resolves to nothing here; see dump_symbols().
     const std::string input = input_file_path();
-    is_dump_ = !input.empty() && capa::mdmp::looks_like_minidump(input);
+    is_dump_ = input_is_minidump();
     if (is_dump_) {
         try {
             dump_symbols_ = capa::mdmp::build_symbol_map(capa::mdmp::Dump::open(input));

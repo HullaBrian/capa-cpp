@@ -137,6 +137,10 @@ ModuleClass classify_ea(const std::vector<ModuleRange>& mods, ea_t ea);
 // directly this is the .dmp, which is where the module list comes from.
 std::string input_file_path();
 
+// Whether this database was opened on a Windows minidump, judged from the input
+// file's own header rather than from IDA's name for the loader.
+bool input_is_minidump();
+
 // ---------------------------------------------------------------------------
 // imports / externs
 // ---------------------------------------------------------------------------

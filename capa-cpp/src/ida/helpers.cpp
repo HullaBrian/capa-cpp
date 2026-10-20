@@ -179,6 +179,11 @@ std::string input_file_path() {
     return path;
 }
 
+bool input_is_minidump() {
+    const std::string path = input_file_path();
+    return !path.empty() && capa::mdmp::looks_like_minidump(path);
+}
+
 namespace {
 
 std::string basename_lower(const std::string& path) {
