@@ -23,14 +23,15 @@ void extract_file_format(std::vector<FeaturePair>& out) {
     // contribute no format feature and rules that need one will not match.
 }
 
-void extract_os(std::vector<FeaturePair>& out) {
+void extract_os(std::vector<FeaturePair>& out, bool is_dump) {
     const std::string format_name = file_type_name();
     if (format_name.find("PE") != std::string::npos) {
         add(out, Feature::os(OS_WINDOWS));
-    } else if (format_name.find("Windows Crash Dump") != std::string::npos) {
+    } else if (is_dump) {
         // Not in capa, whose IDA backend has no dump support. IDA names a minidump
         // "Windows Crash Dump File (Minidump)" -- no "PE" in it -- yet every dump is of
-        // a Windows process, and capa-cpp's own minidump backend says so too.
+        // a Windows process, and capa-cpp's own minidump backend says so too. Keyed
+        // off the input file rather than that name, which IDA is free to change.
         add(out, Feature::os(OS_WINDOWS));
     }
     // ELF would need capa's detect_elf_os(), which parses the ELF headers to tell
@@ -48,9 +49,9 @@ void extract_arch(std::vector<FeaturePair>& out) {
 
 }  // namespace
 
-void extract_global_features(std::vector<FeaturePair>& out) {
+void extract_global_features(std::vector<FeaturePair>& out, bool is_dump) {
     extract_file_format(out);
-    extract_os(out);
+    extract_os(out, is_dump);
     extract_arch(out);
 }
 

@@ -25,13 +25,13 @@ namespace capa::ida {
 
 class IdaExtractor : public StaticFeatureExtractor {
 public:
-    // `skip_system_modules` drops functions that live in a Windows system module.
-    // Default because it is almost always what is wanted: a database opened over a
-    // process dump contains the whole address space, and reporting ntdll's and
-    // kernel32's capabilities tells you about Windows, not about the sample. The main
-    // executable, other modules, and unbacked runtime-allocated memory (IDA's
-    // debugNNN segments) are always scanned.
-    explicit IdaExtractor(bool skip_system_modules = true);
+    // `skip_system_modules` drops functions that live in a Windows system module, and
+    // only in a database opened on a minidump: a dump holds the whole address space,
+    // and ntdll's and kernel32's capabilities describe Windows, not the sample. The
+    // main executable, other modules, and unbacked runtime-allocated memory (IDA's
+    // debugNNN segments) are always scanned. Any other database is scanned whole, as
+    // capa's IDA backend does, whatever this says. Off by default for the same reason.
+    explicit IdaExtractor(bool skip_system_modules = false);
 
     Address get_base_address() const override { return Address::absolute(base_); }
     const SampleHashes& get_sample_hashes() const override { return hashes_; }
@@ -68,6 +68,11 @@ public:
     // which is most of the rule set. The dump's module headers still have the tables.
     const capa::mdmp::SymbolMap& dump_symbols() const { return dump_symbols_; }
     bool has_dump_symbols() const { return dump_symbols_.export_count() > 0; }
+    // Whether the database was opened on a minidump, judged from the input file
+    // itself rather than from IDA's name for its loader.
+    bool is_dump() const { return is_dump_; }
+    // Whether the system-module filter is in effect: asked for, and a dump.
+    bool filters_system_modules() const { return skip_system_modules_ && is_dump_; }
 
     // What the system-module filter left out, so the caller can say so rather than
     // leaving the user to wonder why a 200-module dump reported four functions.
@@ -84,7 +89,8 @@ private:
     IdaFunc& func_at(ea_t ea) const;
 
     std::uint64_t base_ = 0;
-    bool skip_system_modules_ = true;
+    bool skip_system_modules_ = false;
+    bool is_dump_ = false;
     std::vector<ModuleRange> modules_;
     std::string modules_note_;
     capa::mdmp::SymbolMap dump_symbols_;
@@ -105,7 +111,7 @@ private:
 // ---- per-scope handlers (one file each, mirroring capa's module layout) ----
 
 // ida/global_.cpp
-void extract_global_features(std::vector<FeaturePair>& out);
+void extract_global_features(std::vector<FeaturePair>& out, bool is_dump);
 // ida/file.cpp
 void extract_file_features(std::vector<FeaturePair>& out);
 // ida/function.cpp

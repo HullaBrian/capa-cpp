@@ -63,3 +63,20 @@ reference implementation (9.4.0 at the time of writing).
 - capa refuses to run when any rule is invalid or a dependency is missing; capa-cpp skips the
   rule and says so (it predates full rule support, and an embedding host should not fail on one
   bad private rule). With capa-rules nothing is skipped.
+
+## IDA backend extensions
+
+capa's IDA backend raises on a file type other than PE, ELF or raw binary, so it has no output
+for a database opened on a process minidump. capa-cpp's IDA backend accepts one, and for that
+input only:
+
+- emits `os: windows` (`capa-cpp/src/ida/global_.cpp`), since IDA's file type name has no "PE"
+  in it;
+- resolves `api:` through the dump's export and import tables (`capa-cpp/src/ida/insn.cpp`);
+- in the plugin, skips functions in Windows system modules unless asked not to
+  (`capa-cpp/src/ida/extractor.cpp`). `IdaExtractor` defaults to scanning everything, and
+  `capa-idalib` always does.
+
+Whether the input is a dump is decided from the input file, not from IDA's loader name. A PE or
+ELF database is extracted exactly as capa's IDA backend extracts it, whatever the plugin's
+settings.

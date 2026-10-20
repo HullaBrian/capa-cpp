@@ -104,8 +104,9 @@ void PluginCtx::register_actions() {
         "Show only the rules that matched inside the function under the cursor", -1));
     register_action(ACTION_DESC_LITERAL_PLUGMOD(
         ACTION_SCAN_SYSTEM, "Scan Windows system modules", &m_scan_system, this, nullptr,
-        "Also analyse ntdll, kernel32 and the rest of System32. Off by default: in a "
-        "process dump those are Windows' capabilities, not the sample's", -1));
+        "In a database opened on a process dump, also analyse ntdll, kernel32 and the "
+        "rest of System32. Off by default: those are Windows' capabilities, not the "
+        "sample's. Other databases are always analysed whole", -1));
     // Without this the tick mark never appears, however update() sets it.
     update_action_checkable(ACTION_BY_FUNCTION, true);
     update_action_checkable(ACTION_LIMIT, true);
@@ -158,7 +159,7 @@ void PluginCtx::ensure_menu() {
         m_menu_path.clear();
     }
 
-    // Every branch below reports a partial attach, since a menu missing one of three
+    // Every branch below reports a partial attach, since a menu missing one of its
     // commands looks like a bug in the command that is missing rather than in this.
     auto took = [&](const char* path, int n, const char* where) {
         m_menu_path = path;
@@ -511,7 +512,7 @@ void PluginCtx::toggle_scan_system_modules() {
     set_scan_system_modules(!scan_system());
     if (m_have_results)
         info("capa: system modules will %s the next analysis.\n"
-             "Re-run Edit > Plugins > CAPA C++ > Analyze to apply this.",
+             "Re-run Analyze (Alt-F5) to apply this.",
              scan_system() ? "be included in" : "be excluded from");
 }
 

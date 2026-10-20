@@ -39,7 +39,9 @@ if [[ "$INSTALL" -eq 1 ]]; then
     # IDA keeps the plugin .so open for as long as it runs, so installing over a
     # live IDA either fails outright or -- worse -- appears to work while the old
     # binary stays loaded (see the equivalent comment in build.ps1).
-    if pgrep -x -f 'ida64|ida|idat64|idat' > /dev/null 2>&1; then
+    # -x against the process name alone: with -f the pattern would have to match the
+    # whole command line, path and arguments included, and never would.
+    if pgrep -x 'ida64|ida|idat64|idat' > /dev/null 2>&1; then
         echo "error: IDA is running. Close it before installing, or the .so cannot" >&2
         echo "       be replaced and IDA will keep running the old build." >&2
         exit 1

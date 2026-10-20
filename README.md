@@ -300,4 +300,18 @@ reproduce, and why.
   - No rule generator.
   - Matches with a MAEC analysis conclusion aren't filtered out.
   - The UI uses IDA's own form, chooser and dirtree instead of Qt.
-  - It has been built and link-checked, but not yet tested inside a running IDA.
+  - Tested inside IDA on Windows, on a PE file and a process minidump. The Linux build has been
+    built and link-checked only.
+
+### IDA backend extensions beyond capa
+
+capa's IDA backend refuses a process minidump; capa-cpp's analyzes one, and only for that input
+does it do three things capa never does. Every other database gets capa's behavior.
+
+- `os: windows` is emitted. IDA's name for the format ("Windows Crash Dump File (Minidump)")
+  lacks the "PE" capa looks for, but every dump is of a Windows process.
+- `api:` names come from the export and import tables in the dump's module headers, which IDA
+  does not parse for a memory image.
+- Functions in Windows system modules (ntdll, kernel32 and the rest of System32) are skipped,
+  and the log says which. Tick "Scan Windows system modules" in the CAPA C++ menu to include
+  them. `capa-idalib` never skips them.
