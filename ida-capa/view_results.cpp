@@ -433,28 +433,14 @@ private:
         std::sort(m_folders.begin(), m_folders.end());
         m_folders.erase(std::unique(m_folders.begin(), m_folders.end()), m_folders.end());
 
+        // Same reasoning: a row with no label is a match the user cannot read.
         if (announce) {
-            // What the tree actually ended up holding. "All the matches are in one
-            // folder" and "there are rows with no name" are both invisible from the
-            // code and obvious from these three numbers plus one example path.
-            std::string example = m_by_path.empty() ? std::string("(none)")
-                                                    : m_by_path.begin()->first;
-            msg("capa: tree: %d row(s) across %d folder(s); first row at \"%s\"\n",
-                static_cast<int>(m_rows.size()), static_cast<int>(m_folders.size()),
-                example.c_str());
-
-            // Exactly what get_row() will hand IDA for the first few rows. If these
-            // read correctly here but the window shows something else, the fault is in
-            // the rendering rather than in anything this plugin computed -- and that
-            // distinction is the one thing the log could not previously settle.
             std::size_t blank = 0;
             for (const Row& r : m_rows)
                 if (r.label.empty()) ++blank;
-            for (std::size_t i = 0; i < m_rows.size() && i < 5; ++i)
-                msg("capa:   row %d: label=\"%s\" ea=%a details=\"%s\"\n", static_cast<int>(i),
-                    m_rows[i].label.c_str(), m_rows[i].address, m_rows[i].details.c_str());
             if (blank > 0)
-                msg("capa:   %d row(s) have an empty label\n", static_cast<int>(blank));
+                msg("capa: %d result row(s) have an empty label; please report this.\n",
+                    static_cast<int>(blank));
         }
 
         m_tree->chdir("/");
