@@ -77,8 +77,8 @@ input only:
   (`capa-cpp/src/ida/extractor.cpp`). `IdaExtractor` defaults to scanning everything, and
   `capa-idalib` always does.
 
-Whether the input is a dump is decided from the input file, not from IDA's loader name. IDA's
-minidump loader records no input path, so for a reopened IDB the file it is named after
-(`x.dmp` for `x.dmp.i64`) stands in, if its header is a minidump's. A PE or
+Whether the input is a dump is decided from the input file, not from IDA's loader name. If the
+database has no record of its input, the file it is named after (`x.dmp` for `x.dmp.i64`) stands
+in, if its header is a minidump's. A PE or
 ELF database is extracted exactly as capa's IDA backend extracts it, whatever the plugin's
 settings.
