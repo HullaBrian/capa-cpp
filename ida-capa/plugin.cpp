@@ -1,5 +1,7 @@
 #include "plugin.h"
 
+#include <cstring>
+
 #include "annotate.h"
 #include "ida/helpers.h"
 #include "pseudocode.h"
@@ -43,22 +45,38 @@ const char* const PLUGINS_PATH = "Edit/Plugins/";
 // Where create_menu() puts a menu whose menupath it could not resolve: the menu bar.
 const char* const MENUBAR_PATH = "CAPA C++/";
 const char* const MENU_ACTIONS[] = {
-    ACTION_SHOW,
     ACTION_ANALYZE,
+    // Here as well as in the explorer window: the analysis that reports skipped system
+    // modules can end with no results, and then there is no window to right-click.
+    // Dumps only; see menu_action_qty().
+    ACTION_SCAN_SYSTEM,
+    ACTION_SHOW,
     ACTION_ANNOTATE,
     ACTION_UNANNOTATE,
+    ACTION_RULES,
 };
 
-const int MENU_ACTION_QTY = static_cast<int>(qnumber(MENU_ACTIONS));
+// The system-module toggle exists only in a database opened on a dump: anywhere else
+// it would change nothing, so it is not registered, shown or attached at all.
+bool wanted(const char* action, bool is_dump) {
+    return is_dump || std::strcmp(action, ACTION_SCAN_SYSTEM) != 0;
+}
+
+int menu_action_qty(bool is_dump) {
+    int n = 0;
+    for (const char* name : MENU_ACTIONS)
+        if (wanted(name, is_dump)) ++n;
+    return n;
+}
 
 // SETMENU_APP appends, so the items keep the order declared above rather than coming
 // out reversed. Returns how many took, rather than all-or-nothing: a path that
 // accepted some of them has to be remembered as the one they are on, or the caller
 // tries the next path and the successful ones end up in two menus at once.
-int attach_menu_actions(const char* path) {
+int attach_menu_actions(const char* path, bool is_dump) {
     int n = 0;
     for (const char* name : MENU_ACTIONS)
-        if (attach_action_to_menu(path, name, SETMENU_APP)) ++n;
+        if (wanted(name, is_dump) && attach_action_to_menu(path, name, SETMENU_APP)) ++n;
     return n;
 }
 
@@ -67,6 +85,7 @@ int attach_menu_actions(const char* path) {
 //-------------------------------------------------------------------------
 PluginCtx::PluginCtx() {
     msg("capa: ida-capa loaded (build %s)\n", BUILD_STAMP);
+    m_is_dump = capa::ida::input_is_minidump();
     register_actions();
     hook_event_listener(HT_UI, &m_ui_listener);
     hook_event_listener(HT_IDB, &m_idb_listener);
@@ -99,10 +118,13 @@ void PluginCtx::register_actions() {
     register_action(ACTION_DESC_LITERAL_PLUGMOD(
         ACTION_LIMIT, "Limit results to current function", &m_limit, this, nullptr,
         "Show only the rules that matched inside the function under the cursor", -1));
-    register_action(ACTION_DESC_LITERAL_PLUGMOD(
-        ACTION_SCAN_SYSTEM, "Scan Windows system modules", &m_scan_system, this, nullptr,
-        "Also analyse ntdll, kernel32 and the rest of System32. Off by default: in a "
-        "process dump those are Windows' capabilities, not the sample's", -1));
+    if (m_is_dump) {
+        register_action(ACTION_DESC_LITERAL_PLUGMOD(
+            ACTION_SCAN_SYSTEM, "Scan Windows system modules", &m_scan_system, this, nullptr,
+            "Also analyse ntdll, kernel32 and the rest of System32. Off by default: in a "
+            "process dump those are Windows' capabilities, not the sample's", -1));
+        update_action_checkable(ACTION_SCAN_SYSTEM, true);
+    }
     // Without this the tick mark never appears, however update() sets it.
     update_action_checkable(ACTION_BY_FUNCTION, true);
     update_action_checkable(ACTION_LIMIT, true);
@@ -110,7 +132,6 @@ void PluginCtx::register_actions() {
         ACTION_FLAT, "Show results as a flat list", &m_flat, this, nullptr,
         "List every match with its namespace in a column instead of in folders. Use "
         "this if the folder tree does not render correctly", -1));
-    update_action_checkable(ACTION_SCAN_SYSTEM, true);
     update_action_checkable(ACTION_FLAT, true);
 
     register_action(ACTION_DESC_LITERAL_PLUGMOD(
@@ -124,7 +145,7 @@ void PluginCtx::register_actions() {
                                                 "Remove capa's annotations, restoring the "
                                                 "colours and comments it changed", -1));
 
-    register_action(ACTION_DESC_LITERAL_PLUGMOD(ACTION_RULES, "capa rules directory...",
+    register_action(ACTION_DESC_LITERAL_PLUGMOD(ACTION_RULES, "CAPA Rules Directory...",
                                                 &m_rules, this, nullptr,
                                                 "Choose which capa rules to load", -1));
     register_action(ACTION_DESC_LITERAL_PLUGMOD(ACTION_CLEAR, "Clear capa results", &m_clear,
@@ -155,24 +176,24 @@ void PluginCtx::ensure_menu() {
         m_menu_path.clear();
     }
 
-    // Every branch below reports a partial attach, since a menu missing one of three
+    // Every branch below reports a partial attach, since a menu missing one of its
     // commands looks like a bug in the command that is missing rather than in this.
     auto took = [&](const char* path, int n, const char* where) {
         m_menu_path = path;
-        if (n < MENU_ACTION_QTY)
-            msg("capa: only %d of %d commands could be attached to %s.\n", n, MENU_ACTION_QTY,
-                where);
+        const int qty = menu_action_qty(m_is_dump);
+        if (n < qty)
+            msg("capa: only %d of %d commands could be attached to %s.\n", n, qty, where);
     };
 
     if (create_menu(MENU_NAME, MENU_LABEL, PLUGINS_PATH)) {
-        if (int n = attach_menu_actions(MENU_PATH); n > 0) {
+        if (int n = attach_menu_actions(MENU_PATH, m_is_dump); n > 0) {
             took(MENU_PATH, n, "Edit > Plugins > CAPA C++");
             return;  // the ordinary case; nothing else worth a line in the log
         }
         // create_menu() reports success for a menu it could not place where it was
         // asked, having appended it to the menu bar instead -- in which case the path
         // above does not name it and nothing attached.
-        if (int n = attach_menu_actions(MENUBAR_PATH); n > 0) {
+        if (int n = attach_menu_actions(MENUBAR_PATH, m_is_dump); n > 0) {
             took(MENUBAR_PATH, n, "the \"CAPA C++\" menu");
             msg("capa: Edit > Plugins would not take a submenu; capa's commands are in "
                 "the \"%s\" menu on the menu bar.\n",
@@ -184,7 +205,7 @@ void PluginCtx::ensure_menu() {
 
     // No submenu anywhere. The commands still have to be reachable, so they go
     // straight into Edit > Plugins beside IDA's own entry for the plugin.
-    if (int n = attach_menu_actions(PLUGINS_PATH); n > 0) {
+    if (int n = attach_menu_actions(PLUGINS_PATH, m_is_dump); n > 0) {
         took(PLUGINS_PATH, n, "Edit > Plugins");
         msg("capa: could not create the \"%s\" submenu; capa's commands are in "
             "Edit > Plugins.\n",
@@ -215,8 +236,9 @@ void PluginCtx::unregister_actions() {
 void PluginCtx::attach_actions(TWidget* w) {
     if (w == nullptr) return;
     // Attached permanently rather than from ui_populating_widget_popup: every one of
-    // these is always relevant in this window.
-    for (const char* name : POPUP_ACTIONS) attach_action_to_popup(w, nullptr, name);
+    // these is always relevant in this window -- for this database, which is fixed.
+    for (const char* name : POPUP_ACTIONS)
+        if (wanted(name, m_is_dump)) attach_action_to_popup(w, nullptr, name);
 }
 
 //-------------------------------------------------------------------------
@@ -508,7 +530,7 @@ void PluginCtx::toggle_scan_system_modules() {
     set_scan_system_modules(!scan_system());
     if (m_have_results)
         info("capa: system modules will %s the next analysis.\n"
-             "Re-run \"Analyze with capa\" (Alt-F5) to apply this.",
+             "Re-run Analyze (Alt-F5) to apply this.",
              scan_system() ? "be included in" : "be excluded from");
 }
 

@@ -24,6 +24,7 @@
     <RepoRoot>$(MSBuildThisFileDirectory)..\</RepoRoot>
     <IdaSdkDir>$(RepoRoot)ida-sdk\src</IdaSdkDir>
     <CapaSrcDir>$(RepoRoot)capa-cpp\src</CapaSrcDir>
+    <CapaCoreDir>$(RepoRoot)capa-core\src</CapaCoreDir>
     <!-- The plugin links IDA, which uses the *dynamic* CRT, so its dependencies must
          come from the static-md triplet (static libs, /MD runtime). capa-cpp.exe uses
          the plain static triplet and /MT; the two cannot share an installed tree. -->
@@ -71,7 +72,7 @@
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
       <!-- Serial compilation: parallel cl instances race on the shared PDB (C1041). -->
       <MultiProcessorCompilation>false</MultiProcessorCompilation>
-      <AdditionalIncludeDirectories>$(IdaSdkDir)\include;$(IdaSdkDir);$(CapaSrcDir);$(MSBuildThisFileDirectory);$(VcpkgInstalledDir)\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(IdaSdkDir)\include;$(IdaSdkDir);$(CapaCoreDir);$(CapaSrcDir);$(MSBuildThisFileDirectory);$(VcpkgInstalledDir)\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <!-- NDEBUG in *both* configurations, and never _DEBUG: _DEBUG makes the MSVC
            headers reference debug-CRT-only symbols (_CrtDbgReport, _calloc_dbg,
            msvcprtd.lib) that the release CRT IDA links against does not export,
@@ -91,7 +92,7 @@
       <AdditionalLibraryDirectories>$(IdaSdkDir)\lib\x64_win_64;$(VcpkgInstalledDir)\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <!-- yaml-cpp.lib (release) in both configurations: the debug build is /MDd and
            would drag in the debug CRT. -->
-      <AdditionalDependencies>ida.lib;yaml-cpp.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>ida.lib;yaml-cpp.lib;zs.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
 
@@ -111,17 +112,28 @@
        a single .lib could not serve both. ObjectFileName keeps the .obj files from
        colliding with same-named sources in other directories. -->
   <ItemGroup>
-    <ClCompile Include="$(CapaSrcDir)\address.cpp">
+    <ClCompile Include="$(CapaCoreDir)\address.cpp">
       <ObjectFileName>$(IntDir)core\</ObjectFileName>
     </ClCompile>
-    <ClCompile Include="$(CapaSrcDir)\feature.cpp">
+    <ClCompile Include="$(CapaCoreDir)\feature.cpp">
       <ObjectFileName>$(IntDir)core\</ObjectFileName>
     </ClCompile>
-    <ClCompile Include="$(CapaSrcDir)\engine.cpp">
+    <ClCompile Include="$(CapaCoreDir)\engine.cpp">
       <ObjectFileName>$(IntDir)core\</ObjectFileName>
     </ClCompile>
-    <ClCompile Include="$(CapaSrcDir)\rules.cpp">
+    <ClCompile Include="$(CapaCoreDir)\rules.cpp">
       <ObjectFileName>$(IntDir)core\</ObjectFileName>
+    </ClCompile>
+    <!-- rules.cpp's Python-regex translation and com/ feature database. -->
+    <ClCompile Include="$(CapaCoreDir)\pyregex.cpp">
+      <ObjectFileName>$(IntDir)core\</ObjectFileName>
+    </ClCompile>
+    <ClCompile Include="$(CapaCoreDir)\com_lookup.cpp">
+      <ObjectFileName>$(IntDir)core\</ObjectFileName>
+    </ClCompile>
+    <ClCompile Include="$(CapaCoreDir)\com_database.cpp">
+      <ObjectFileName>$(IntDir)core\</ObjectFileName>
+      <AdditionalOptions>/bigobj %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
     <ClCompile Include="$(CapaSrcDir)\symbols.cpp">
       <ObjectFileName>$(IntDir)core\</ObjectFileName>
@@ -129,11 +141,11 @@
     <ClCompile Include="$(CapaSrcDir)\extract_helpers.cpp">
       <ObjectFileName>$(IntDir)core\</ObjectFileName>
     </ClCompile>
-    <ClCompile Include="$(CapaSrcDir)\static_caps.cpp">
+    <ClCompile Include="$(CapaCoreDir)\static_caps.cpp">
       <ObjectFileName>$(IntDir)core\</ObjectFileName>
     </ClCompile>
     <!-- find_static_capabilities takes a FeatureFilter, so the plugin needs it too. -->
-    <ClCompile Include="$(CapaSrcDir)\feature_filter.cpp">
+    <ClCompile Include="$(CapaCoreDir)\feature_filter.cpp">
       <ObjectFileName>$(IntDir)core\</ObjectFileName>
     </ClCompile>
     <!-- The minidump CONTAINER parser only. A .dmp opened directly in IDA has no

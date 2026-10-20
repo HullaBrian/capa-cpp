@@ -12,8 +12,9 @@ IdaExtractor::IdaExtractor(bool skip_system_modules)
 
     // If this database was opened on a .dmp, read the module export and import tables
     // out of it. Without them `api:` resolves to nothing here; see dump_symbols().
-    const std::string input = input_file_path();
-    if (!input.empty() && capa::mdmp::looks_like_minidump(input)) {
+    const std::string input = dump_input_path();
+    is_dump_ = !input.empty();
+    if (is_dump_) {
         try {
             dump_symbols_ = capa::mdmp::build_symbol_map(capa::mdmp::Dump::open(input));
             msg("capa: read %zu export(s) and %zu import slot(s) from %s\n",
@@ -30,7 +31,7 @@ IdaExtractor::IdaExtractor(bool skip_system_modules)
     hashes_.sha256 = input_file_sha256();
 
     // qualified: the class has a same-named member that would otherwise hide this
-    ida::extract_global_features(global_features_);
+    ida::extract_global_features(global_features_, is_dump_);
 
     // Built once here rather than per function: capa's Python rebuilds them for every
     // function because each FunctionHandle carries a fresh `ctx` dict.
@@ -69,7 +70,7 @@ std::vector<FunctionHandle> IdaExtractor::get_functions() const {
         // Windows' own code, when the database covers a whole process. Note what was
         // dropped and where, so the caller can report it -- a filter that silently
         // removes most of the database is worse than no filter.
-        if (skip_system_modules_ && !modules_.empty() &&
+        if (filters_system_modules() && !modules_.empty() &&
             classify_ea(modules_, ea) == ModuleClass::SystemModule) {
             ++skipped_system_functions_;
             auto it = std::upper_bound(

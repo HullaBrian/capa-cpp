@@ -96,6 +96,10 @@ private:
     // one they were asked to go to; empty when nothing took them. Kept so they can be
     // detached from the right place.
     std::string m_menu_path;
+    // Whether this database was opened on a process minidump. Fixed for the plugin's
+    // lifetime (one PluginCtx per database), and the only kind of database the
+    // system-module toggle means anything for.
+    bool m_is_dump = false;
 
     ResultsView m_results{*this};
     DetailsView m_details;

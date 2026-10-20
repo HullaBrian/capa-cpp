@@ -3,6 +3,9 @@
     <Platform Name="x64" />
     <Platform Name="x86" />
   </Configurations>
+  <Project Path="capa-core/capa-core.vcxproj" Id="8c0e6a5e-3f0b-4b8e-9a51-6c2f1d7e4a10" />
   <Project Path="capa-cpp/capa-cpp.vcxproj" Id="491648a6-b1c9-4db3-bd35-29a1d99646c8" />
+  <Project Path="capa-tests/capa-tests.vcxproj" Id="2f6b9d4c-7a1e-4c55-8b3d-0e9a4f1c6b72" />
+  <Project Path="capa-idalib/capa-idalib.vcxproj" Id="5a3c7e21-9d48-4f0b-a6e2-7c1b8d4f2e93" />
   <Project Path="ida-capa/ida-capa.vcxproj" Id="6d1f0e4c-9a2b-4f77-b3e5-2c8a41f0d913" />
 </Solution>

@@ -1,12 +1,16 @@
-// capa-cpp: C++ reimplementation of CAPA's TTD dynamic backend path.
+// capa-cpp: a C++ port of capa.
 //
 // Usage:
+//   capa-cpp <sample.frz> -r <rules> [-r <rules> ...] [-j | -vv] [-o <out.json>]
+//                                                   (capa freeze file, any capa backend)
 //   capa-cpp <report.ttd.json> -r <rules-dir> [-j | -vv] [-o <out.json>]
 //   capa-cpp <report.ttd.json> -r <rules-dir> --matches-only -o <out.json>
 //   capa-cpp <report.ttd.json> --dump-features      (extractor parity dump)
+//   capa-cpp <report.ttd.json> --dump-freeze <out.frz>
+//   capa-cpp <process.dmp> -r <rules-dir> [-j | -vv]
 //   capa-cpp --rules <rules-dir>                    (rule-load smoke test)
 //
-// -f ttd is accepted and ignored (TTD is the only supported format).
+// For a TTD report, -f ttd is accepted and ignored.
 
 #define _CRT_SECURE_NO_WARNINGS  // std::getenv for the optional CAPA_CPP_TIMING probe
 
@@ -28,6 +32,7 @@
 
 #include "capabilities.h"
 #include "feature_filter.h"
+#include "freeze.h"
 #include "match_retention.h"
 #include "memprobe.h"
 #include "module_filter.h"
@@ -38,7 +43,9 @@
 #include "minidump/process.h"
 #include "static/extractor.h"
 #include "render.h"
+#include "result_document.h"
 #include "rules.h"
+#include "static_caps.h"
 #include "static/capabilities.h"
 #include "static/manifest.h"
 #include "static/trace_image.h"
@@ -547,78 +554,22 @@ static int dump_static_features(const std::string& manifest_path, const std::str
 
 // ---- ResultDocument metadata for the dynamic/TTD path ----
 //
-// The renderers are backend-neutral, so each backend materializes its own Doc.
-// This is capa's loader.compute_dynamic_layout plus the global-feature scan that
-// used to live inside render.cpp.
+// capa's loader.collect_metadata + compute_dynamic_layout, as result_document.h ports them
+// for any dynamic extractor. The rule paths are the ones given with -r.
 //
 // `with_layout` off skips the matched-call walk. The layout names every call any rule
 // matched at, which on a large trace is most of the document's `meta` and the only part
 // of it whose size follows the trace rather than the ruleset; `--matches-only` exists
 // precisely for a consumer that reads addresses, so it does not pay for the names.
-static render::Doc build_dynamic_doc(const ttd::TtdExtractor& extractor,
+static render::Doc build_dynamic_doc(const RuleSet& ruleset, const ttd::TtdExtractor& extractor,
                                      const Capabilities& caps,
                                      const std::vector<std::string>& argv,
                                      bool with_layout = true) {
-    render::Doc doc;
-    doc.flavor = render::Flavor::Dynamic;
-    doc.extractor_name = "TtdExtractor";
-
-    const auto& r = extractor.report();
-    doc.hashes = SampleHashes{r.sample.md5, r.sample.sha1, r.sample.sha256};
-
-    for (const auto& [f, addr] : extractor.extract_global_features()) {
-        if (f.type == FeatureType::OS) doc.os = f.s;
-        else if (f.type == FeatureType::Arch) doc.arch = f.s;
-        else if (f.type == FeatureType::Format) doc.format = f.s;
-    }
-
-    // the rules directory/directories, as given on the command line
+    std::vector<std::string> rule_paths;
     for (std::size_t k = 0; k + 1 < argv.size(); ++k)
-        if (argv[k] == "-r" || argv[k] == "--rules-dir") doc.rule_paths.push_back(argv[k + 1]);
-
-    doc.file_feature_count = caps.file_feature_count;
-    doc.scope_feature_counts = caps.process_feature_counts;
-    doc.feature_counts_filtered = caps.feature_counts_filtered;
-
-    if (!with_layout) {
-        doc.layout_omitted = true;
-        doc.matches_only = true;
-        return doc;
-    }
-
-    // layout: only the calls a rule matched at, and only the threads/processes that
-    // still have any (capa drops the empty ones).
-    //
-    // Collected and sorted in bulk rather than inserted one at a time. This is a lookup
-    // table, not a location set: the addresses arrive grouped by rule and so in no
-    // particular order overall, and hundreds of thousands of positioned inserts into a
-    // flat container is quadratic -- it cost five seconds here before it was done this
-    // way round.
-    std::vector<Address> matched;
-    for (const auto& [name, results] : caps.matches)
-        for (const auto& [addr, res] : results)
-            if (addr.type == AddressType::CALL) matched.push_back(addr);
-    std::sort(matched.begin(), matched.end());
-    matched.erase(std::unique(matched.begin(), matched.end()), matched.end());
-
-    for (const auto& ph : extractor.get_processes()) {
-        render::DynProcess proc{ph.address, extractor.get_process_name(ph), {}};
-        for (const auto& th : extractor.get_threads(ph)) {
-            render::DynThread thread{th.address, {}};
-            // Indexed rather than materialized: get_calls builds a handle per call in
-            // the thread before the first one is looked at, and this walk keeps at most
-            // the few that a rule matched at.
-            const std::size_t calls = extractor.call_count(ph, th);
-            for (std::size_t idx = 0; idx < calls; ++idx) {
-                const ttd::CallHandle ch = extractor.call_at(ph, th, idx);
-                if (!std::binary_search(matched.begin(), matched.end(), ch.address)) continue;
-                thread.matched_calls.push_back({ch.address, extractor.get_call_name(ph, th, ch)});
-            }
-            if (!thread.matched_calls.empty()) proc.matched_threads.push_back(std::move(thread));
-        }
-        if (!proc.matched_threads.empty()) doc.dyn_layout.push_back(std::move(proc));
-    }
-    return doc;
+        if (argv[k] == "-r" || argv[k] == "--rules-dir") rule_paths.push_back(argv[k + 1]);
+    return render::build_dynamic_doc(ruleset, extractor, caps, "TtdExtractor", rule_paths,
+                                     with_layout);
 }
 
 
@@ -921,6 +872,93 @@ static int emit(const render::RenderInput& in, OutputMode mode, const std::strin
     return 0;
 }
 
+// The freeze path: capa's own interchange format, matched with no analysis backend.
+//
+// A freeze file holds every feature some capa backend extracted from one sample -- capa's
+// vivisect, IDA, dnfile, CAPE, ... or capa-cpp's own via --dump-freeze. This is the path
+// the porting contract is checked on: same rules + same freeze = same result document as
+// capa. So nothing here departs from capa: no feature filter (it changes the reported
+// feature counts), every match tree kept, the document in capa's schema.
+static int run_freeze(const std::string& path, const std::vector<std::string>& rule_paths,
+                      OutputMode mode, const std::string& out_path,
+                      const std::vector<std::string>& argv, render::DocFormat format) {
+    const bool timing = std::getenv("CAPA_CPP_TIMING") != nullptr;
+    auto t0 = std::chrono::steady_clock::now();
+    auto lap = [&](const char* what) {
+        if (!timing) return;
+        auto now = std::chrono::steady_clock::now();
+        std::fprintf(stderr, "[timing] %-22s %8.1f ms%s\n", what,
+                     std::chrono::duration<double, std::milli>(now - t0).count(),
+                     timing_memory_suffix().c_str());
+        t0 = now;
+    };
+
+    freeze::Frozen frozen;
+    try {
+        frozen = freeze::load_file(path);
+    } catch (const freeze::FreezeError& e) {
+        std::fprintf(stderr, "error: %s: %s\n", path.c_str(), e.what());
+        return 1;
+    }
+    lap("load freeze");
+
+    RuleSet ruleset;
+    try {
+        ruleset = RuleSet::load_from_paths(rule_paths);
+    } catch (const InvalidRule& e) {
+        std::fprintf(stderr, "error: %s\n", e.message.c_str());
+        return 1;
+    }
+    lap("load+index rules");
+
+    FeatureFilter filter = FeatureFilter::from_ruleset(ruleset);
+    filter.disable();
+
+    // capa's input format for a freeze file, reported when the features carry none.
+    const std::string sample_path = render::capa_path(path);
+    if (frozen.static_extractor) {
+        const NullStaticFeatureExtractor& ex = *frozen.static_extractor;
+        StaticCapabilities caps = find_static_capabilities(ruleset, ex, filter);
+        lap("match");
+        render::Doc doc = render::build_static_doc(ruleset, ex, caps, "NullStaticFeatureExtractor",
+                                                   rule_paths, "freeze");
+        render::RenderInput in{ruleset, caps.matches, doc, sample_path, argv};
+        const int rc = emit(in, mode, out_path, format);
+        lap("render");
+        return rc;
+    }
+    const NullDynamicFeatureExtractor& ex = *frozen.dynamic_extractor;
+    Capabilities caps = find_dynamic_capabilities(ruleset, ex, filter, MatchRetention::kKeepAll);
+    lap("match");
+    render::Doc doc = render::build_dynamic_doc(ruleset, ex, caps, "NullDynamicFeatureExtractor",
+                                                rule_paths, /*with_layout=*/true, "freeze");
+    render::RenderInput in{ruleset, caps.matches, doc, sample_path, argv, &caps.subrule_matches};
+    const int rc = emit(in, mode, out_path, format);
+    lap("render");
+    return rc;
+}
+
+// The features of a TTD report as a capa freeze file, so the same features can be matched
+// by capa itself (`capa -f freeze`) or by capa-cpp's freeze path, and the two compared.
+static int dump_freeze(const std::string& report_path, const std::string& out_path) {
+    ttd::Report report;
+    if (!load_report(report_path, report)) return 1;
+    ttd::TtdExtractor extractor(std::move(report));
+    const std::string bytes = freeze::dump(extractor, "TtdExtractor");
+    std::FILE* fp = std::fopen(out_path.c_str(), "wb");
+    if (fp == nullptr) {
+        std::fprintf(stderr, "error: cannot write %s\n", out_path.c_str());
+        return 1;
+    }
+    const bool ok = std::fwrite(bytes.data(), 1, bytes.size(), fp) == bytes.size();
+    if (std::fclose(fp) != 0 || !ok) {
+        std::fprintf(stderr, "error: failed to write %s\n", out_path.c_str());
+        return 1;
+    }
+    std::fprintf(stderr, "wrote %s (%zu bytes)\n", out_path.c_str(), bytes.size());
+    return 0;
+}
+
 // The minidump analysis path: assemble the dump, pick the regions worth scanning,
 // run capa's static engine over each, and render the merged result.
 static int run_minidump(const std::string& path, const std::string& rules_dir, OutputMode mode,
@@ -1128,7 +1166,7 @@ static int run(const std::string& report_path, const std::string& rules_dir, Out
                      max_match_trees, stubs, caps.truncated_matches.size());
     }
 
-    render::Doc doc = build_dynamic_doc(extractor, caps, argv, /*with_layout=*/!matches_only);
+    render::Doc doc = build_dynamic_doc(ruleset, extractor, caps, argv, /*with_layout=*/!matches_only);
     doc.match_evidence = match_evidence;
     doc.sparse_evidence = sparse_evidence;
     lap("build document");
@@ -1224,10 +1262,14 @@ int main(int argc, char** argv) {
 static int run_main(std::vector<std::string> args) {
     if (args.empty()) {
         std::fprintf(stderr,
-                     "usage: capa-cpp <report.ttd.json> -r <rules-dir> [-j | -vv]\n"
+                     "usage: capa-cpp <sample.frz> -r <rules> [-r <rules> ...] [-j | -vv]\n"
+                     "                [-o <out.json>] [--msgpack]\n"
+                     "       capa-cpp <report.ttd.json> -r <rules-dir> [-j | -vv]\n"
                      "                [--matches-only] [--match-evidence] [--sparse-evidence]\n"
                      "                [--max-match-trees <n>] [-o <out.json>] [--top-level-calls]\n"
                      "       capa-cpp <report.ttd.json> --dump-features\n"
+                     "       capa-cpp <report.ttd.json> --dump-freeze <out.frz>\n"
+                     "       capa-cpp <process.dmp> -r <rules-dir> [-j | -vv]\n"
                      "       capa-cpp --scan-code-manifest <manifest.json> -r <rules-dir>\n"
                      "                [--dumps-dir <dir>] [-o <out.json>] [--quiet]\n"
                      "       capa-cpp --rules <rules-dir>\n");
@@ -1257,6 +1299,65 @@ static int run_main(std::vector<std::string> args) {
                 want_base = std::strtoull(args[++k].c_str(), nullptr, 0);
         }
         return dump_static_features(manifest_path, dumps_dir, want_base);
+    }
+
+    // freeze path, detected by the `capa0000` magic, as capa detects it.
+    {
+        std::string frz;
+        for (std::size_t k = 0; k < args.size(); ++k) {
+            const std::string& a = args[k];
+            if (a == "-r" || a == "--rules-dir" || a == "-o" || a == "--output" || a == "-f") {
+                ++k;  // a value, not the input
+                continue;
+            }
+            if (!a.empty() && a[0] != '-' && freeze::is_freeze_file(a)) {
+                frz = a;
+                break;
+            }
+        }
+        if (!frz.empty()) {
+            std::vector<std::string> rule_paths;
+            std::string out_path;
+            OutputMode mode = OutputMode::Default;
+            render::DocFormat format = render::DocFormat::Json;
+            for (std::size_t k = 0; k < args.size(); ++k) {
+                const std::string& a = args[k];
+                if ((a == "-r" || a == "--rules-dir") && k + 1 < args.size()) {
+                    rule_paths.push_back(args[++k]);
+                } else if ((a == "-o" || a == "--output") && k + 1 < args.size()) {
+                    out_path = args[++k];
+                } else if (a == "-f" && k + 1 < args.size()) {
+                    // capa's -f freeze; nothing else is accepted for a freeze file
+                    if (args[++k] != "freeze" && args[k] != "auto") {
+                        std::fprintf(stderr, "error: %s is a freeze file, not -f %s\n", frz.c_str(),
+                                     args[k].c_str());
+                        return 2;
+                    }
+                } else if (a == "-j" || a == "--json") {
+                    mode = OutputMode::Json;
+                } else if (a == "-vv" || a == "--vverbose") {
+                    mode = OutputMode::VVerbose;
+                } else if (a == "--msgpack") {
+                    format = render::DocFormat::MsgPack;
+                } else if (a == frz) {
+                    continue;
+                } else {
+                    std::fprintf(stderr,
+                                 "error: unknown option, missing value, or extra argument: %s\n",
+                                 a.c_str());
+                    return 2;
+                }
+            }
+            if (rule_paths.empty()) {
+                std::fprintf(stderr, "error: -r <rules> is required for matching\n");
+                return 2;
+            }
+            if (format == render::DocFormat::MsgPack && mode != OutputMode::Json) {
+                std::fprintf(stderr, "error: --msgpack applies to the JSON document; add -j\n");
+                return 2;
+            }
+            return run_freeze(frz, rule_paths, mode, out_path, args, format);
+        }
     }
 
     // minidump path. Detection is by magic, not extension: a dump is as likely to
@@ -1401,7 +1502,7 @@ static int run_main(std::vector<std::string> args) {
         }
     }
 
-    std::string report_path, rules_dir, out_path;
+    std::string report_path, rules_dir, out_path, freeze_out;
     OutputMode mode = OutputMode::Default;
     bool dump = false;
     bool check_parse = false;
@@ -1463,6 +1564,8 @@ static int run_main(std::vector<std::string> args) {
             format = render::DocFormat::MsgPack;
         } else if (a == "--dump-features") {
             dump = true;
+        } else if (a == "--dump-freeze" && k + 1 < args.size()) {
+            freeze_out = args[++k];
         } else if (a == "--check-report-parse") {
             check_parse = true;
         } else if (a == "--no-feature-filter") {
@@ -1531,6 +1634,7 @@ static int run_main(std::vector<std::string> args) {
     }
     if (check_parse) return check_report_parse(report_path);
     if (dump) return dump_features(report_path);
+    if (!freeze_out.empty()) return dump_freeze(report_path, freeze_out);
     if (rules_dir.empty()) {
         std::fprintf(stderr, "error: -r <rules-dir> is required for matching\n");
         return 2;

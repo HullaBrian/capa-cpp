@@ -580,7 +580,7 @@ bool run_analysis(const std::string& rules_dir, ResultsDoc& out, std::string& er
         // The reverse matters just as much: if the filter is on but there is no module
         // list to apply it to, nothing is filtered, and without a word about it that
         // is indistinguishable from the filter working.
-        if (!scan_system_modules() && extractor.modules().empty()) {
+        if (extractor.filters_system_modules() && extractor.modules().empty()) {
             // The segment names are the only other thing a classification could key
             // off, so print them: it turns "the filter does nothing" from a mystery
             // into a bug report someone can act on.
@@ -591,7 +591,7 @@ bool run_analysis(const std::string& rules_dir, ResultsDoc& out, std::string& er
             if (segs.size() > 12) names += fmt(", +%d more", static_cast<int>(segs.size() - 12));
             msg("capa: %d segment(s): %s\n", static_cast<int>(segs.size()), names.c_str());
         }
-        if (!scan_system_modules() && !extractor.modules().empty() &&
+        if (extractor.filters_system_modules() && !extractor.modules().empty() &&
             extractor.skipped_system_functions() == 0)
             msg("capa: the module list classified nothing as a system module, so every "
                 "function was scanned.\n");
@@ -606,7 +606,8 @@ bool run_analysis(const std::string& rules_dir, ResultsDoc& out, std::string& er
                     static_cast<int>(extractor.skipped_system_functions()),
                     static_cast<int>(mods.size()), names.c_str());
             msg("capa: %s\n", out.skipped_note.c_str());
-            msg("capa: use \"Scan Windows system modules\" to include them.\n");
+            msg("capa: to include them, tick \"Scan Windows system modules\" in the CAPA C++ "
+                "menu and analyze again.\n");
         }
     } catch (const Cancelled&) {
         return false;  // user's choice; no error message

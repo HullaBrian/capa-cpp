@@ -7,9 +7,9 @@
 #
 #   --install   also copy the .so into ~/.idapro/plugins
 #
-# Dependencies (nlohmann-json, yaml-cpp) come from the system by default:
-#   Fedora:  sudo dnf install json-devel yaml-cpp-devel
-#   Debian:  sudo apt install nlohmann-json3-dev libyaml-cpp-dev
+# Dependencies (nlohmann-json, yaml-cpp, zlib) come from the system by default:
+#   Fedora:  sudo dnf install json-devel yaml-cpp-devel yaml-cpp-static zlib-devel
+#   Debian:  sudo apt install nlohmann-json3-dev libyaml-cpp-dev zlib1g-dev
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -39,7 +39,9 @@ if [[ "$INSTALL" -eq 1 ]]; then
     # IDA keeps the plugin .so open for as long as it runs, so installing over a
     # live IDA either fails outright or -- worse -- appears to work while the old
     # binary stays loaded (see the equivalent comment in build.ps1).
-    if pgrep -x -f 'ida64|ida|idat64|idat' > /dev/null 2>&1; then
+    # -x against the process name alone: with -f the pattern would have to match the
+    # whole command line, path and arguments included, and never would.
+    if pgrep -x 'ida64|ida|idat64|idat' > /dev/null 2>&1; then
         echo "error: IDA is running. Close it before installing, or the .so cannot" >&2
         echo "       be replaced and IDA will keep running the old build." >&2
         exit 1

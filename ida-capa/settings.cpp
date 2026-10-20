@@ -1,5 +1,7 @@
 #include "settings.h"
 
+#include <registry.hpp>
+
 namespace idacapa {
 
 namespace {
@@ -63,9 +65,26 @@ bool get_flag(nodeidx_t idx, bool dflt) {
 
 }  // namespace
 
-std::string rules_dir() { return get_str(IDX_RULES_DIR); }
+// IDA's registry (the Windows registry, or ida.reg elsewhere): shared by every
+// database, so a new one starts from the directory last used anywhere.
+const char* const REG_SUBKEY = "capa-cpp";
+const char* const REG_RULES_DIR = "rules_dir";
 
-void set_rules_dir(const std::string& path) { set_str(IDX_RULES_DIR, path); }
+std::string rules_dir() {
+    std::string dir = get_str(IDX_RULES_DIR);
+    if (!dir.empty()) return dir;
+    qstring last;
+    // A remembered directory that has since gone would only fail to load; asking
+    // again is the better outcome.
+    if (reg_read_string(&last, REG_RULES_DIR, REG_SUBKEY) && qisdir(last.c_str()))
+        return last.c_str();
+    return {};
+}
+
+void set_rules_dir(const std::string& path) {
+    set_str(IDX_RULES_DIR, path);
+    if (!path.empty()) reg_write_string(REG_RULES_DIR, path.c_str(), REG_SUBKEY);
+}
 
 std::string ask_rules_dir() {
     // IDA has no directory picker; HIST_DIR at least gives the text field a history

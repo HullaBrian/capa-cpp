@@ -1,7 +1,9 @@
 // Per-database settings and result cache for ida-capa.
 //
 // Everything lives in one netnode inside the IDB, so a rules directory chosen once
-// and a completed analysis both survive closing and reopening the database.
+// and a completed analysis both survive closing and reopening the database. The
+// rules directory is also remembered in IDA's registry, as the default for
+// databases that have none of their own.
 #pragma once
 
 #include "pch.h"
@@ -10,8 +12,10 @@
 
 namespace idacapa {
 
-// The rules directory capa should load from, or "" if never set.
+// The rules directory capa should load from: this database's own, else the one last
+// chosen in any database (if it still exists), else "".
 std::string rules_dir();
+// Sets this database's directory and remembers it for databases that have none.
 void set_rules_dir(const std::string& path);
 
 // Ask the user to pick a rules directory, seeding the dialog with the current one.

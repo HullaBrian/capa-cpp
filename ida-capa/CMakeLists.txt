@@ -11,10 +11,11 @@
 #
 # Dependencies come from the system: nlohmann-json is header-only, and yaml-cpp
 # links statically (into the plugin) when a static build of it is available, so the
-# target system needs no libyaml-cpp of its own -- only IDA itself.
-#   Fedora:  sudo dnf install json-devel yaml-cpp-devel yaml-cpp-static
+# target system needs no libyaml-cpp of its own. zlib links dynamically; every
+# Linux system IDA runs on has libz.so.1.
+#   Fedora:  sudo dnf install json-devel yaml-cpp-devel yaml-cpp-static zlib-devel
 #            (-devel for headers, -static for the static archive; both are needed)
-#   Debian:  sudo apt install nlohmann-json3-dev libyaml-cpp-dev
+#   Debian:  sudo apt install nlohmann-json3-dev libyaml-cpp-dev zlib1g-dev
 #            (Debian/Ubuntu don't package a static libyaml-cpp.a; on those distros
 #            this falls back to linking libyaml-cpp.so, which then must be present
 #            on the target system too)
@@ -39,6 +40,8 @@ set(IDA_PLUGIN_DIR "${CMAKE_BINARY_DIR}")
 
 find_package(idasdk REQUIRED)
 find_package(nlohmann_json REQUIRED)
+# capa-core reads freeze files and its com/ database through zlib.
+find_package(ZLIB REQUIRED)
 
 # Fedora ships static yaml-cpp as a separate package/CMake config (yaml-cpp-static)
 # from the shared one (yaml-cpp), both exporting the same yaml-cpp::yaml-cpp
@@ -65,6 +68,7 @@ else()
         "the built plugin will need libyaml-cpp installed on the target system too")
 endif()
 
+set(CAPA_CORE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../capa-core/src")
 set(CAPA_SRC_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../capa-cpp/src")
 
 # NDEBUG in every configuration: on Windows this avoids linking the debug CRT
@@ -72,17 +76,21 @@ set(CAPA_SRC_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../capa-cpp/src")
 # behaves the same on every platform.
 ida_add_plugin(ida-capa
     SOURCES
-        # Shared capa-cpp core. Compiled a second time here (rather than linked from
-        # a library shared with capa-cpp.exe) to keep the two build graphs
-        # independent -- see the equivalent comment in ida-capa.vcxproj.
-        ${CAPA_SRC_DIR}/address.cpp
-        ${CAPA_SRC_DIR}/feature.cpp
-        ${CAPA_SRC_DIR}/engine.cpp
-        ${CAPA_SRC_DIR}/rules.cpp
+        # The capa-core sources the plugin needs. Compiled a second time here (rather
+        # than linked from capa-core's library) to keep the build graphs independent
+        # -- see the equivalent comment in ida-capa.vcxproj.
+        ${CAPA_CORE_DIR}/address.cpp
+        ${CAPA_CORE_DIR}/feature.cpp
+        ${CAPA_CORE_DIR}/engine.cpp
+        ${CAPA_CORE_DIR}/rules.cpp
+        # rules.cpp's Python-regex translation and com/ feature database.
+        ${CAPA_CORE_DIR}/pyregex.cpp
+        ${CAPA_CORE_DIR}/com_lookup.cpp
+        ${CAPA_CORE_DIR}/com_database.cpp
         ${CAPA_SRC_DIR}/symbols.cpp
         ${CAPA_SRC_DIR}/extract_helpers.cpp
-        ${CAPA_SRC_DIR}/static_caps.cpp
-        ${CAPA_SRC_DIR}/feature_filter.cpp
+        ${CAPA_CORE_DIR}/static_caps.cpp
+        ${CAPA_CORE_DIR}/feature_filter.cpp
         ${CAPA_SRC_DIR}/module_filter.cpp
         ${CAPA_SRC_DIR}/minidump/mdmp.cpp
         ${CAPA_SRC_DIR}/static/memory.cpp
@@ -108,7 +116,9 @@ ida_add_plugin(ida-capa
     LIBRARIES
         nlohmann_json::nlohmann_json
         yaml-cpp::yaml-cpp
+        ZLIB::ZLIB
     INCLUDES
+        ${CAPA_CORE_DIR}
         ${CAPA_SRC_DIR}
         ${CMAKE_CURRENT_SOURCE_DIR}
     DEFINES

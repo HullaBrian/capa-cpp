@@ -1,0 +1,238 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<!--
+  capa-idalib: capa-cpp's IDA backend, headless, through idalib. Built like the plugin
+  (dynamic CRT, NDEBUG, IDA SDK defines) because it links the same IDA libraries.
+-->
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|x64">
+      <Configuration>Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+
+  <PropertyGroup Label="Globals">
+    <VCProjectVersion>18.0</VCProjectVersion>
+    <ProjectGuid>{5a3c7e21-9d48-4f0b-a6e2-7c1b8d4f2e93}</ProjectGuid>
+    <RootNamespace>capaidalib</RootNamespace>
+    <Keyword>Win32Proj</Keyword>
+    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+  </PropertyGroup>
+
+  <PropertyGroup Label="UserMacros">
+    <RepoRoot>$(MSBuildThisFileDirectory)..\</RepoRoot>
+    <IdaSdkDir>$(RepoRoot)ida-sdk\src</IdaSdkDir>
+    <CapaSrcDir>$(RepoRoot)capa-cpp\src</CapaSrcDir>
+    <CapaCoreDir>$(RepoRoot)capa-core\src</CapaCoreDir>
+    <!-- The plugin links IDA, which uses the *dynamic* CRT, so its dependencies must
+         come from the static-md triplet (static libs, /MD runtime). capa-cpp.exe uses
+         the plain static triplet and /MT; the two cannot share an installed tree. -->
+    <VcpkgInstalledDir>$(RepoRoot)ida-capa\vcpkg_installed\x64-windows-static-md</VcpkgInstalledDir>
+  </PropertyGroup>
+
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+
+  <!-- UseDebugLibraries stays false in Debug on purpose; see the NDEBUG comment below. -->
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v145</PlatformToolset>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v145</PlatformToolset>
+    <WholeProgramOptimization>false</WholeProgramOptimization>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Label="ExtensionSettings" />
+  <ImportGroup Label="Shared" />
+  <ImportGroup Label="PropertySheets">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+
+  <!-- Intermediates beside the output rather than in ida-capa\x64\, so build\ holds every
+       artifact and nothing is written into the source tree. Named by project, because
+       capa-cpp.vcxproj writes its own objects into the same build\<Config>\obj\. -->
+  <PropertyGroup>
+    <IntDir>$(RepoRoot)build\$(Configuration)\obj\$(MSBuildProjectName)\</IntDir>
+    <OutDir>$(RepoRoot)build\$(Configuration)\</OutDir>
+    <TargetName>capa-idalib</TargetName>
+  </PropertyGroup>
+
+  <ItemDefinitionGroup>
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+      <ConformanceMode>true</ConformanceMode>
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <!-- Serial compilation: parallel cl instances race on the shared PDB (C1041). -->
+      <MultiProcessorCompilation>false</MultiProcessorCompilation>
+      <AdditionalIncludeDirectories>$(IdaSdkDir)\include;$(IdaSdkDir);$(CapaCoreDir);$(CapaSrcDir);$(VcpkgInstalledDir)\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <!-- NDEBUG in *both* configurations, and never _DEBUG: _DEBUG makes the MSVC
+           headers reference debug-CRT-only symbols (_CrtDbgReport, _calloc_dbg,
+           msvcprtd.lib) that the release CRT IDA links against does not export,
+           producing LNK2001/LNK1120. Same reason RuntimeLibrary stays MD below. -->
+      <PreprocessorDefinitions>NDEBUG;__NT__;__EA64__;__X64__;__IDP__;_CRT_SECURE_NO_WARNINGS;_SILENCE_ALL_CXX20_DEPRECATION_WARNINGS;WIN32;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
+      <!-- The SDK's inline helpers narrow size_t/ea_t conversions throughout. -->
+      <DisableSpecificWarnings>4267;4244;4018;4146;4996</DisableSpecificWarnings>
+    </ClCompile>
+    <Link>
+      <SubSystem>Console</SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <!-- A crash inside a plugin reaches you as "ida_capa+0x3e798" and nothing else.
+           The map turns that back into a function name without the exact build. -->
+      <GenerateMapFile>true</GenerateMapFile>
+      <MapExports>true</MapExports>
+      <AdditionalLibraryDirectories>$(IdaSdkDir)\lib\x64_win_64;$(VcpkgInstalledDir)\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <!-- yaml-cpp.lib (release) in both configurations: the debug build is /MDd and
+           would drag in the debug CRT. -->
+      <AdditionalDependencies>ida.lib;idalib.lib;yaml-cpp.lib;zs.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+  </ItemDefinitionGroup>
+
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <ClCompile>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+    </ClCompile>
+    <Link>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <OptimizeReferences>true</OptimizeReferences>
+    </Link>
+  </ItemDefinitionGroup>
+
+  <!-- Shared capa-cpp core. Compiled a second time here rather than linked from a
+       static library: capa-cpp.exe builds these with /MT and the plugin needs /MD, so
+       a single .lib could not serve both. ObjectFileName keeps the .obj files from
+       colliding with same-named sources in other directories. -->
+  <ItemGroup>
+    <ClCompile Include="$(CapaCoreDir)\address.cpp">
+      <ObjectFileName>$(IntDir)core\</ObjectFileName>
+    </ClCompile>
+    <ClCompile Include="$(CapaCoreDir)\feature.cpp">
+      <ObjectFileName>$(IntDir)core\</ObjectFileName>
+    </ClCompile>
+    <ClCompile Include="$(CapaCoreDir)\engine.cpp">
+      <ObjectFileName>$(IntDir)core\</ObjectFileName>
+    </ClCompile>
+    <ClCompile Include="$(CapaCoreDir)\rules.cpp">
+      <ObjectFileName>$(IntDir)core\</ObjectFileName>
+    </ClCompile>
+    <!-- rules.cpp's Python-regex translation and com/ feature database. -->
+    <ClCompile Include="$(CapaCoreDir)\pyregex.cpp">
+      <ObjectFileName>$(IntDir)core\</ObjectFileName>
+    </ClCompile>
+    <ClCompile Include="$(CapaCoreDir)\com_lookup.cpp">
+      <ObjectFileName>$(IntDir)core\</ObjectFileName>
+    </ClCompile>
+    <ClCompile Include="$(CapaCoreDir)\com_database.cpp">
+      <ObjectFileName>$(IntDir)core\</ObjectFileName>
+      <AdditionalOptions>/bigobj %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+    <ClCompile Include="$(CapaSrcDir)\symbols.cpp">
+      <ObjectFileName>$(IntDir)core\</ObjectFileName>
+    </ClCompile>
+    <ClCompile Include="$(CapaSrcDir)\extract_helpers.cpp">
+      <ObjectFileName>$(IntDir)core\</ObjectFileName>
+    </ClCompile>
+    <ClCompile Include="$(CapaCoreDir)\static_caps.cpp">
+      <ObjectFileName>$(IntDir)core\</ObjectFileName>
+    </ClCompile>
+    <!-- find_static_capabilities takes a FeatureFilter, so the plugin needs it too. -->
+    <ClCompile Include="$(CapaCoreDir)\feature_filter.cpp">
+      <ObjectFileName>$(IntDir)core\</ObjectFileName>
+    </ClCompile>
+    <!-- The minidump CONTAINER parser only. A .dmp opened directly in IDA has no
+         debugger behind it, so the module list has to come from the file itself; this
+         is the same parser capa-cpp.exe uses and it pulls in nothing else (no Zydis,
+         no src\static\). -->
+    <ClCompile Include="$(CapaSrcDir)\module_filter.cpp">
+      <ObjectFileName>$(IntDir)core\</ObjectFileName>
+    </ClCompile>
+    <ClCompile Include="$(CapaSrcDir)\minidump\mdmp.cpp">
+      <ObjectFileName>$(IntDir)core\</ObjectFileName>
+    </ClCompile>
+    <!-- ...and the PE reader plus SymbolMap, so the plugin can name APIs in a database
+         IDA parsed no import directory for. Zydis-free: pe.cpp uses only the Arch enum
+         out of static\disasm.h and never decodes anything. -->
+    <ClCompile Include="$(CapaSrcDir)\static\memory.cpp">
+      <ObjectFileName>$(IntDir)core\</ObjectFileName>
+    </ClCompile>
+    <ClCompile Include="$(CapaSrcDir)\static\symbol_map.cpp">
+      <ObjectFileName>$(IntDir)core\</ObjectFileName>
+    </ClCompile>
+    <ClCompile Include="$(CapaSrcDir)\minidump\pe.cpp">
+      <ObjectFileName>$(IntDir)core\</ObjectFileName>
+    </ClCompile>
+    <ClCompile Include="$(CapaSrcDir)\minidump\process.cpp">
+      <ObjectFileName>$(IntDir)core\</ObjectFileName>
+    </ClCompile>
+  </ItemGroup>
+
+  <!-- The rest of capa-core: freeze files and the result document. -->
+  <ItemGroup>
+    <ClCompile Include="$(CapaCoreDir)\freeze.cpp">
+      <ObjectFileName>$(IntDir)core\</ObjectFileName>
+    </ClCompile>
+    <ClCompile Include="$(CapaCoreDir)\null_extractor.cpp">
+      <ObjectFileName>$(IntDir)core\</ObjectFileName>
+    </ClCompile>
+    <ClCompile Include="$(CapaCoreDir)\render.cpp">
+      <ObjectFileName>$(IntDir)core\</ObjectFileName>
+    </ClCompile>
+    <ClCompile Include="$(CapaCoreDir)\render_tree.cpp">
+      <ObjectFileName>$(IntDir)core\</ObjectFileName>
+    </ClCompile>
+    <ClCompile Include="$(CapaCoreDir)\result_document.cpp">
+      <ObjectFileName>$(IntDir)core\</ObjectFileName>
+    </ClCompile>
+    <ClCompile Include="$(CapaCoreDir)\match_retention.cpp">
+      <ObjectFileName>$(IntDir)core\</ObjectFileName>
+    </ClCompile>
+    <ClCompile Include="$(CapaCoreDir)\capabilities.cpp">
+      <ObjectFileName>$(IntDir)core\</ObjectFileName>
+    </ClCompile>
+  </ItemGroup>
+
+  <!-- The IDA backend. -->
+  <ItemGroup>
+    <ClCompile Include="$(CapaSrcDir)\ida\helpers.cpp">
+      <ObjectFileName>$(IntDir)ida\</ObjectFileName>
+    </ClCompile>
+    <ClCompile Include="$(CapaSrcDir)\ida\global_.cpp">
+      <ObjectFileName>$(IntDir)ida\</ObjectFileName>
+    </ClCompile>
+    <ClCompile Include="$(CapaSrcDir)\ida\file.cpp">
+      <ObjectFileName>$(IntDir)ida\</ObjectFileName>
+    </ClCompile>
+    <ClCompile Include="$(CapaSrcDir)\ida\function.cpp">
+      <ObjectFileName>$(IntDir)ida\</ObjectFileName>
+    </ClCompile>
+    <ClCompile Include="$(CapaSrcDir)\ida\basicblock.cpp">
+      <ObjectFileName>$(IntDir)ida\</ObjectFileName>
+    </ClCompile>
+    <ClCompile Include="$(CapaSrcDir)\ida\insn.cpp">
+      <ObjectFileName>$(IntDir)ida\</ObjectFileName>
+    </ClCompile>
+    <ClCompile Include="$(CapaSrcDir)\ida\extractor.cpp">
+      <ObjectFileName>$(IntDir)ida\</ObjectFileName>
+    </ClCompile>
+  </ItemGroup>
+
+  <ItemGroup>
+    <ClCompile Include="main.cpp" />
+  </ItemGroup>
+
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <ImportGroup Label="ExtensionTargets" />
+</Project>

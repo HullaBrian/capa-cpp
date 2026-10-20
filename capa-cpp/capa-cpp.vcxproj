@@ -24,7 +24,7 @@
     <ProjectGuid>{491648a6-b1c9-4db3-bd35-29a1d99646c8}</ProjectGuid>
     <RootNamespace>capacpp</RootNamespace>
     <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
-    <!-- Dependencies (nlohmann/json, yaml-cpp) come from a vcpkg manifest install
+    <!-- Dependencies (nlohmann/json, yaml-cpp, zlib, zydis) come from a vcpkg manifest install
          into vcpkg_installed\x64-windows-static (see README for the install command).
          The include/lib dirs are wired explicitly below (per-config) so the build
          does not depend on the vcpkg MSBuild auto-integration. -->
@@ -138,14 +138,14 @@
       <PreprocessorDefinitions>_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp20</LanguageStandard>
-      <AdditionalIncludeDirectories>$(ProjectDir)src;$(VcpkgInstalledDir)\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir)src;$(RepoRoot)capa-core\src;$(VcpkgInstalledDir)\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <AdditionalLibraryDirectories>$(VcpkgInstalledDir)\debug\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <AdditionalDependencies>yaml-cppd.lib;Zydis.lib;Zycore.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>yaml-cppd.lib;Zydis.lib;Zycore.lib;zsd.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
     <Manifest>
       <EnableSegmentHeap>true</EnableSegmentHeap>
@@ -160,36 +160,25 @@
       <PreprocessorDefinitions>NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp20</LanguageStandard>
-      <AdditionalIncludeDirectories>$(ProjectDir)src;$(VcpkgInstalledDir)\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir)src;$(RepoRoot)capa-core\src;$(VcpkgInstalledDir)\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <AdditionalLibraryDirectories>$(VcpkgInstalledDir)\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <AdditionalDependencies>yaml-cpp.lib;Zydis.lib;Zycore.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>yaml-cpp.lib;Zydis.lib;Zycore.lib;zs.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
     <Manifest>
       <EnableSegmentHeap>true</EnableSegmentHeap>
     </Manifest>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClInclude Include="src\address.h" />
-    <ClInclude Include="src\feature.h" />
-    <ClInclude Include="src\engine.h" />
-    <ClInclude Include="src\rules.h" />
-    <ClInclude Include="src\feature_extractor.h" />
     <ClInclude Include="src\extract_helpers.h" />
-    <ClInclude Include="src\static_caps.h" />
-    <ClInclude Include="src\capabilities.h" />
-    <ClInclude Include="src\render.h" />
-    <ClInclude Include="src\render_tree.h" />
     <ClInclude Include="src\symbols.h" />
     <ClInclude Include="src\hashes.h" />
     <ClInclude Include="src\module_filter.h" />
     <ClInclude Include="src\memprobe.h" />
-    <ClInclude Include="src\feature_filter.h" />
-    <ClInclude Include="src\match_retention.h" />
     <ClInclude Include="src\ttd\models.h" />
     <ClInclude Include="src\ttd\sax_reader.h" />
     <ClInclude Include="src\ttd\extractor.h" />
@@ -207,21 +196,11 @@
     <ClInclude Include="src\static\capabilities.h" />
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="src\address.cpp" />
-    <ClCompile Include="src\feature.cpp" />
-    <ClCompile Include="src\engine.cpp" />
-    <ClCompile Include="src\rules.cpp" />
     <ClCompile Include="src\extract_helpers.cpp" />
-    <ClCompile Include="src\static_caps.cpp" />
-    <ClCompile Include="src\capabilities.cpp" />
-    <ClCompile Include="src\render.cpp" />
-    <ClCompile Include="src\render_tree.cpp" />
     <ClCompile Include="src\symbols.cpp" />
     <ClCompile Include="src\hashes.cpp" />
     <ClCompile Include="src\module_filter.cpp" />
     <ClCompile Include="src\memprobe.cpp" />
-    <ClCompile Include="src\feature_filter.cpp" />
-    <ClCompile Include="src\match_retention.cpp" />
     <ClCompile Include="src\ttd\models.cpp" />
     <ClCompile Include="src\ttd\sax_reader.cpp" />
     <ClCompile Include="src\ttd\extractor.cpp" />
@@ -268,6 +247,12 @@
       <ObjectFileName>$(IntDir)static\</ObjectFileName>
     </ClCompile>
     <ClCompile Include="src\main.cpp" />
+  </ItemGroup>
+  <!-- The backend-independent engine: rules, matching, freeze files, result document. -->
+  <ItemGroup>
+    <ProjectReference Include="..\capa-core\capa-core.vcxproj">
+      <Project>{8c0e6a5e-3f0b-4b8e-9a51-6c2f1d7e4a10}</Project>
+    </ProjectReference>
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
