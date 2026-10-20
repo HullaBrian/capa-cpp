@@ -47,7 +47,7 @@ analysis backend in it: rules in, features in, result document out.
 
 ## Requirements
 
-- To compile `capa-cpp.exe` and `ida-capa.dll` (Windows):
+- To compile on Windows (everything):
   - Windows x64
   - Visual Studio 2022 or 2026 (MSVC v143/v145, C++ 20)
   - vcpkg (the copy bundled with Visual Studio works)
@@ -56,10 +56,10 @@ analysis backend in it: rules in, features in, result document out.
   CLI is not ported to Linux):
   - Linux x64
   - CMake 3.25+, a C++20 compiler (GCC or Clang)
-  - `nlohmann-json` and `yaml-cpp` dev packages (`sudo dnf install json-devel
-    yaml-cpp-devel yaml-cpp-static` on Fedora -- `-devel` for headers, `-static` for
-    the static archive; `sudo apt install nlohmann-json3-dev libyaml-cpp-dev` on
-    Debian/Ubuntu)
+  - `nlohmann-json`, `yaml-cpp` and `zlib` dev packages (`sudo dnf install json-devel
+    yaml-cpp-devel yaml-cpp-static zlib-devel` on Fedora -- `-devel` for headers, `-static`
+    for the static archive; `sudo apt install nlohmann-json3-dev libyaml-cpp-dev zlib1g-dev`
+    on Debian/Ubuntu)
   - the ida-sdk submodule, which ships prebuilt Linux SDK libraries
 - To use:
   - capa [rules](https://github.com/mandiant/capa-rules)
@@ -96,10 +96,11 @@ MSBuild capa-idalib\capa-idalib.vcxproj /p:Configuration=Release /p:Platform=x64
 
 `nlohmann-json` is header-only, and `yaml-cpp` links statically into the plugin
 (when a static build of it is available), so the built `.so` needs nothing beyond
-IDA itself on the target system.
+IDA itself and the system's `libz.so.1` on the target system.
 
 ```sh
-sudo dnf install json-devel yaml-cpp-devel yaml-cpp-static   # or: apt install nlohmann-json3-dev libyaml-cpp-dev
+sudo dnf install json-devel yaml-cpp-devel yaml-cpp-static zlib-devel
+# or: sudo apt install nlohmann-json3-dev libyaml-cpp-dev zlib1g-dev
 ./ida-capa/build.sh              # build/ida-capa/ida-capa.so
 ./ida-capa/build.sh --install    # also copy it into ~/.idapro/plugins
 ```

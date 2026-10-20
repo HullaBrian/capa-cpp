@@ -7,9 +7,9 @@
 #
 #   --install   also copy the .so into ~/.idapro/plugins
 #
-# Dependencies (nlohmann-json, yaml-cpp) come from the system by default:
-#   Fedora:  sudo dnf install json-devel yaml-cpp-devel
-#   Debian:  sudo apt install nlohmann-json3-dev libyaml-cpp-dev
+# Dependencies (nlohmann-json, yaml-cpp, zlib) come from the system by default:
+#   Fedora:  sudo dnf install json-devel yaml-cpp-devel yaml-cpp-static zlib-devel
+#   Debian:  sudo apt install nlohmann-json3-dev libyaml-cpp-dev zlib1g-dev
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
