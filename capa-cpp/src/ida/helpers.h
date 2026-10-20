@@ -137,6 +137,13 @@ ModuleClass classify_ea(const std::vector<ModuleRange>& mods, ea_t ea);
 // directly this is the .dmp, which is where the module list comes from.
 std::string input_file_path();
 
+// The minidump this database was built from, or "" if it was not built from one (or
+// the file cannot be found). IDA's recorded input path first; failing that, the file
+// the IDB is named after ("x.dmp" for "x.dmp.i64"), because IDA's minidump loader
+// records no input path, so a dump's IDB reopened later has none. Either is accepted
+// only if its header is a minidump's.
+std::string dump_input_path();
+
 // Whether this database was opened on a Windows minidump, judged from the input
 // file's own header rather than from IDA's name for the loader.
 bool input_is_minidump();

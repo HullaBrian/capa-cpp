@@ -179,10 +179,24 @@ std::string input_file_path() {
     return path;
 }
 
-bool input_is_minidump() {
-    const std::string path = input_file_path();
-    return !path.empty() && capa::mdmp::looks_like_minidump(path);
+std::string dump_input_path() {
+    const std::string input = input_file_path();
+    if (!input.empty()) return capa::mdmp::looks_like_minidump(input) ? input : std::string();
+
+    // No recorded input: try the file the database is named after.
+    const char* idb = get_path(PATH_TYPE_IDB);
+    if (idb == nullptr || *idb == '\0') return {};
+    std::string stem = idb;
+    const std::size_t dot = stem.find_last_of('.');
+    if (dot == std::string::npos || stem.find_first_of("\\/", dot) != std::string::npos)
+        return {};
+    const std::string ext = to_lower(stem.substr(dot));
+    if (ext != ".i64" && ext != ".idb") return {};
+    stem.resize(dot);
+    return capa::mdmp::looks_like_minidump(stem) ? stem : std::string();
 }
+
+bool input_is_minidump() { return !dump_input_path().empty(); }
 
 namespace {
 
@@ -236,13 +250,14 @@ bool is_known_system_module_name(const std::string& name) {
 std::vector<capa::ModuleEntry> modules_from_input_dump(std::string* why) {
     std::vector<capa::ModuleEntry> out;
 
-    char path[QMAXPATH] = {};
-    if (get_input_file_path(path, sizeof(path)) <= 0) {
-        if (why) *why = "IDA does not record an input file for this database";
-        return out;
-    }
-    if (!capa::mdmp::looks_like_minidump(path)) {
-        if (why) *why = std::string("input file \"") + path + "\" is not a minidump";
+    const std::string path = dump_input_path();
+    if (path.empty()) {
+        const std::string input = input_file_path();
+        if (why)
+            *why = input.empty()
+                       ? "IDA records no input file for this database, and no minidump is "
+                         "named after it"
+                       : "input file \"" + input + "\" is not a minidump";
         return out;
     }
 
