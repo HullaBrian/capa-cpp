@@ -27,6 +27,11 @@ void extract_os(std::vector<FeaturePair>& out) {
     const std::string format_name = file_type_name();
     if (format_name.find("PE") != std::string::npos) {
         add(out, Feature::os(OS_WINDOWS));
+    } else if (format_name.find("Windows Crash Dump") != std::string::npos) {
+        // Not in capa, whose IDA backend has no dump support. IDA names a minidump
+        // "Windows Crash Dump File (Minidump)" -- no "PE" in it -- yet every dump is of
+        // a Windows process, and capa-cpp's own minidump backend says so too.
+        add(out, Feature::os(OS_WINDOWS));
     }
     // ELF would need capa's detect_elf_os(), which parses the ELF headers to tell
     // Linux from the BSDs. Not ported: without it we would have to guess, and a wrong
