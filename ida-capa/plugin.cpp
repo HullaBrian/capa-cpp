@@ -53,6 +53,7 @@ const char* const MENU_ACTIONS[] = {
     ACTION_SHOW,
     ACTION_ANNOTATE,
     ACTION_UNANNOTATE,
+    ACTION_RULES,
 };
 
 // The system-module toggle exists only in a database opened on a dump: anywhere else
