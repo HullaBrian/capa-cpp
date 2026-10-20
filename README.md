@@ -110,6 +110,10 @@ Debian/Ubuntu don't package a static `libyaml-cpp.a`; there, the build falls bac
 linking `libyaml-cpp.so`, which then must also be installed on whatever system runs
 the plugin.
 
+For a `.so` to distribute, `./scripts/build-linux-release.sh` links yaml-cpp and the C++ runtime
+statically, so the plugin needs only glibc and zlib. Run it on the oldest distribution it should
+load on: built on Ubuntu 22.04 it needs glibc 2.34 (Ubuntu 22.04+, Debian 12+, RHEL 9+).
+
 The build locates the ida-sdk submodule automatically (`ida-capa/../ida-sdk/src`);
 point elsewhere with `-DIDASDK=<path>` or the `IDASDK` environment variable if it's
 installed somewhere else.
