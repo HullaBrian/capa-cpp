@@ -222,8 +222,10 @@ void extract_insn_number_features(const insn_t& insn, std::vector<FeaturePair>& 
         std::int64_t konst = op.type == o_imm ? static_cast<std::int64_t>(mask_op_val(op))
                                               : static_cast<std::int64_t>(op.addr);
 
-        add(out, Feature::number(konst), ih);
-        add(out, Feature::operand_number(i, konst), ih);
+        // mask_op_val and op.addr are unsigned in capa's IDA backend too, so a qword
+        // immediate of all ones is 0xFFFFFFFFFFFFFFFF there, not -1.
+        add(out, Feature::number(konst).as_unsigned(), ih);
+        add(out, Feature::operand_number(i, konst).as_unsigned(), ih);
 
         if (insn.itype == NN_add && konst > 0 &&
             konst < static_cast<std::int64_t>(helpers::MAX_STRUCTURE_SIZE) && op.type == o_imm) {

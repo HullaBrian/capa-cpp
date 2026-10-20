@@ -30,6 +30,19 @@ std::string Address::repr() const {
             std::snprintf(buf, sizeof(buf), "file(0x%llx)",
                           static_cast<unsigned long long>(value));
             return buf;
+        case AddressType::RELATIVE_VA:
+            std::snprintf(buf, sizeof(buf), "relative(0x%llx)",
+                          static_cast<unsigned long long>(value));
+            return buf;
+        case AddressType::DN_TOKEN:
+            std::snprintf(buf, sizeof(buf), "token(0x%llx)",
+                          static_cast<unsigned long long>(value));
+            return buf;
+        case AddressType::DN_TOKEN_OFFSET:
+            std::snprintf(buf, sizeof(buf), "token(0x%llx)+(0x%llx)",
+                          static_cast<unsigned long long>(value),
+                          static_cast<unsigned long long>(id));
+            return buf;
         case AddressType::CALL:
             if (ppid > 0)
                 std::snprintf(buf, sizeof(buf),

@@ -1,15 +1,23 @@
 // Address model for capa-cpp.
 //
-// Ports capa/features/address.py (the address kinds the dynamic/TTD path uses)
-// plus the freeze AddressType serialization from capa/features/freeze/__init__.py.
-//
-// The address kinds the TTD dynamic path and the static backends reach:
+// Ports capa/features/address.py plus the freeze AddressType serialization from
+// capa/features/freeze/__init__.py. Every address kind capa defines is here, because a
+// freeze file from any capa backend may carry any of them:
 //   - AbsoluteVirtualAddress : code locations, file imports/exports/sections
 //   - ProcessAddress(ppid,pid)
 //   - ThreadAddress(process,tid)
 //   - DynamicCallAddress(thread,id)
-//   - FileOffsetAddress      : file-scope strings / embedded PEs (IDA backend)
-//   - NoAddress               : global/file features without a location
+//   - FileOffsetAddress      : file-scope strings / embedded PEs
+//   - RelativeVirtualAddress : deprecated upstream (capa#3072), still loadable
+//   - DNTokenAddress         : a .NET metadata token (dnfile backend)
+//   - DNTokenOffsetAddress   : an offset into the IL of a .NET method (dnfile backend)
+//   - NoAddress              : global/file features without a location
+//
+// Edge case kept from capa, on purpose: capa's integer-like addresses (absolute,
+// relative, file offset, dn token) are `int` subclasses and so compare *equal* to each
+// other when their values are equal. Nothing in capa relies on that, and capa-cpp keeps
+// the kinds distinct; it can only matter for a location set holding two different kinds
+// with the same number, which no backend produces.
 //
 // An Address is a small value type with total ordering and hashing so it can live
 // in unordered_set / ordered containers, mirroring the Python __hash__/__eq__/__lt__.
@@ -36,6 +44,9 @@ enum class AddressType {
     THREAD,
     CALL,
     FILE_OFFSET,
+    RELATIVE_VA,  // not RELATIVE: wingdi.h defines that as a macro
+    DN_TOKEN,
+    DN_TOKEN_OFFSET,  // value = token, id = offset
 };
 
 // A single value type covering every address kind on the dynamic path.
@@ -71,6 +82,28 @@ struct Address {
         Address a;
         a.type = AddressType::FILE_OFFSET;
         a.value = off;
+        return a;
+    }
+
+    static Address relative(std::uint64_t rva) {
+        Address a;
+        a.type = AddressType::RELATIVE_VA;
+        a.value = rva;
+        return a;
+    }
+
+    static Address dn_token(std::uint64_t token) {
+        Address a;
+        a.type = AddressType::DN_TOKEN;
+        a.value = token;
+        return a;
+    }
+
+    static Address dn_token_offset(std::uint64_t token, std::uint64_t offset) {
+        Address a;
+        a.type = AddressType::DN_TOKEN_OFFSET;
+        a.value = token;
+        a.id = offset;
         return a;
     }
 

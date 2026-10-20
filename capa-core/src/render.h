@@ -1,14 +1,17 @@
 // Renderers for capa-cpp.
 //
-// Ports capa/render/{result_document,default,vverbose}.py. Produces:
-//   - a JSON ResultDocument (`-j`), structurally faithful to capa's schema
+// Ports capa/render/{result_document,json,default,vverbose}.py. Produces:
+//   - the JSON ResultDocument (`-j`): capa's schema exactly, member for member -- the
+//     contract a port of capa is held to ("same rules + same binary + same backend =
+//     same JSON output"). capa-cpp's own additions (marked "capa-cpp extension" below)
+//     appear only when a run asks for the feature they describe.
 //   - the default capabilities table
 //   - the vverbose match-tree view (`-vv`)
 //
 // Backend-neutral: the renderers see a `Doc` of already-resolved analysis metadata
-// plus the raw `MatchResults`, never a concrete extractor. Each backend materializes
-// its own `Doc` (see `build_dynamic_doc` / `build_static_doc` in main.cpp), which is
-// what lets the dynamic/TTD, static and minidump paths share one set of renderers.
+// plus the raw `MatchResults`, never a concrete extractor. result_document.h builds a
+// `Doc` from any static or dynamic extractor the way capa's loader does; backends with
+// metadata of their own (the minidump regions) add to it.
 #pragma once
 
 #include <unordered_set>
@@ -68,7 +71,9 @@ struct RegionInfo {
 // Exactly one of `dyn_layout` / `static_layout` is populated, per `flavor`.
 struct Doc {
     Flavor flavor = Flavor::Dynamic;
-    std::string extractor_name;  // "TtdExtractor" | "MinidumpExtractor" | ...
+    // meta.analysis.extractor: capa writes the extractor's class name, so a freeze file
+    // reports "NullStaticFeatureExtractor" and the IDA backend "IdaFeatureExtractor".
+    std::string extractor_name;
     SampleHashes hashes;
     std::string os = "unknown";
     std::string arch = "unknown";
@@ -77,6 +82,10 @@ struct Doc {
 
     std::vector<DynProcess> dyn_layout;         // Flavor::Dynamic
     std::vector<StaticFunction> static_layout;  // Flavor::Static
+
+    // Flavor::Static only: meta.analysis.base_address and .library_functions.
+    Address base_address;
+    std::vector<std::pair<Address, std::string>> library_functions;
 
     // Set when the backend deliberately did not compute the layout (`--matches-only`).
     // An empty layout otherwise means "nothing matched", which is a very different

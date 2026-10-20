@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cstdio>
+#include <cstdlib>
 #include <unordered_map>
 
 #include "symbols.h"
@@ -52,9 +53,22 @@ std::string repr_arg(const Arg& a, const Report& report) {
     return std::to_string(a.i);
 }
 
+// "SEQ:STEPS" in hex, as the report writes positions; nullopt for an empty or malformed one.
+std::optional<std::pair<std::uint64_t, std::uint64_t>> parse_position(const std::string& text) {
+    const std::size_t colon = text.find(':');
+    if (colon == std::string::npos || colon == 0 || colon + 1 == text.size()) return std::nullopt;
+    char* end = nullptr;
+    const std::uint64_t seq = std::strtoull(text.c_str(), &end, 16);
+    if (end != text.c_str() + colon) return std::nullopt;
+    const std::uint64_t steps = std::strtoull(text.c_str() + colon + 1, &end, 16);
+    if (*end != '\0') return std::nullopt;
+    return std::make_pair(seq, steps);
+}
+
 }  // namespace
 
 TtdExtractor::TtdExtractor(Report report) : report_(std::move(report)) {
+    hashes_ = SampleHashes{report_.sample.md5, report_.sample.sha1, report_.sample.sha256};
     global_features_ = compute_global_features(report_);
 
     // index_calls: bucket calls per process/thread, preserving thread insertion order
@@ -134,15 +148,17 @@ std::vector<ProcessHandle> TtdExtractor::get_processes() const {
 
 std::vector<FeaturePair> TtdExtractor::extract_process_features(const ProcessHandle& ph) const {
     std::vector<FeaturePair> out;
-    if (!ph.inner) return out;
-    for (const auto& v : ph.inner->environ_strings) {
+    const auto* proc = static_cast<const Process*>(ph.inner);
+    if (!proc) return out;
+    for (const auto& v : proc->environ_strings) {
         if (!v.empty()) out.emplace_back(Feature::string(v), ph.address);
     }
     return out;
 }
 
 std::string TtdExtractor::get_process_name(const ProcessHandle& ph) const {
-    return ph.inner ? ph.inner->name : std::string();
+    const auto* proc = static_cast<const Process*>(ph.inner);
+    return proc ? proc->name : std::string();
 }
 
 std::vector<ThreadHandle> TtdExtractor::get_threads(const ProcessHandle& ph) const {
@@ -156,20 +172,6 @@ std::vector<ThreadHandle> TtdExtractor::get_threads(const ProcessHandle& ph) con
 std::vector<FeaturePair> TtdExtractor::extract_thread_features(const ProcessHandle&,
                                                               const ThreadHandle&) const {
     return {};  // thread.py emits no features
-}
-
-std::vector<CallHandle> TtdExtractor::get_calls(const ProcessHandle& ph,
-                                                const ThreadHandle& th) const {
-    std::vector<CallHandle> out;
-    const ProcEntry* pe = find_proc(ph.address);
-    if (!pe) return out;
-    const ThreadEntry* te = find_thread(*pe, th.address);
-    if (!te) return out;
-    for (std::size_t idx = 0; idx < te->calls.size(); ++idx) {
-        Address call_addr = Address::call(te->address, idx);
-        out.push_back(CallHandle{call_addr, te->calls[idx]});
-    }
-    return out;
 }
 
 std::size_t TtdExtractor::call_count(const ProcessHandle& ph, const ThreadHandle& th) const {
@@ -192,7 +194,7 @@ std::vector<FeaturePair> TtdExtractor::extract_call_features(const ProcessHandle
                                                             const ThreadHandle&,
                                                             const CallHandle& ch) const {
     std::vector<FeaturePair> out;
-    const Call* call = ch.inner;
+    const auto* call = static_cast<const Call*>(ch.inner);
     if (!call) return out;
 
     // arguments right-to-left, like disassembly. bool skipped.
@@ -200,7 +202,8 @@ std::vector<FeaturePair> TtdExtractor::extract_call_features(const ProcessHandle
     for (auto it = args.rbegin(); it != args.rend(); ++it) {
         if (it->kind == Arg::Kind::Bool) continue;
         if (it->kind == Arg::Kind::Int)
-            out.emplace_back(Feature::number(it->i), ch.address);
+            // Arguments are machine words: unsigned, as capa's sandbox backends report them.
+            out.emplace_back(Feature::number(it->i).as_unsigned(), ch.address);
         else if (it->kind == Arg::Kind::Str)
             out.emplace_back(Feature::string(report_.arg_str(*it)), ch.address);
     }
@@ -216,7 +219,7 @@ std::vector<FeaturePair> TtdExtractor::extract_call_features(const ProcessHandle
 
 std::string TtdExtractor::get_call_name(const ProcessHandle&, const ThreadHandle&,
                                         const CallHandle& ch) const {
-    const Call* call = ch.inner;
+    const auto* call = static_cast<const Call*>(ch.inner);
     if (!call) return "";
 
     const std::string& module = report_.str(call->module);
@@ -240,6 +243,15 @@ std::string TtdExtractor::get_call_name(const ProcessHandle&, const ThreadHandle
 
     std::string pos = call->position.empty() ? "" : (" @TTD " + call->position);
     return api + "(" + args + ")" + ret + pos;
+}
+
+std::optional<CallSpan> TtdExtractor::get_call_span(const ProcessHandle&, const ThreadHandle&,
+                                                    const CallHandle& ch) const {
+    const auto* call = static_cast<const Call*>(ch.inner);
+    if (!call) return std::nullopt;
+    const auto at = parse_position(call->position);
+    if (!at) return std::nullopt;
+    return CallSpan{*at, parse_position(call->return_position)};
 }
 
 }  // namespace capa::ttd

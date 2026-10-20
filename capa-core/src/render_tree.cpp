@@ -116,6 +116,8 @@ void render_match(std::ostringstream& os, const MatchCtx& ctx, const Result& res
 
 }  // namespace
 
+// capa.render.verbose.format_address. Integers in capa.helpers.hex style (upper-case
+// digits) except a bare virtual address, which capa-cpp has always printed in lower case.
 std::string format_address(const Address& a) {
     char buf[128];
     switch (a.type) {
@@ -135,6 +137,19 @@ std::string format_address(const Address& a) {
         case AddressType::FILE_OFFSET:
             std::snprintf(buf, sizeof(buf), "file(0x%llx)",
                           static_cast<unsigned long long>(a.value));
+            return buf;
+        case AddressType::RELATIVE_VA:
+            std::snprintf(buf, sizeof(buf), "base address+0x%llX",
+                          static_cast<unsigned long long>(a.value));
+            return buf;
+        case AddressType::DN_TOKEN:
+            std::snprintf(buf, sizeof(buf), "token(0x%llX)",
+                          static_cast<unsigned long long>(a.value));
+            return buf;
+        case AddressType::DN_TOKEN_OFFSET:
+            std::snprintf(buf, sizeof(buf), "token(0x%llX)+0x%llX",
+                          static_cast<unsigned long long>(a.value),
+                          static_cast<unsigned long long>(a.id));
             return buf;
         case AddressType::NO_ADDRESS:
             return "global";

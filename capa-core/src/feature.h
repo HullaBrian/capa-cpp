@@ -80,8 +80,14 @@ struct Feature {
 
     ValueKind vkind = ValueKind::None;
     std::string s;       // Str/Regex-pattern/Bytes(raw bytes)
-    std::int64_t i = 0;  // Int
+    std::int64_t i = 0;  // Int: the low 64 bits of the value
     double f = 0.0;      // Float
+    // Int only. capa's values are Python ints, which are unbounded, and the ones the
+    // backends produce span [-2^63, 2^64): x64 immediates and sandbox-logged arguments
+    // reach past INT64_MAX. `big` marks a value of 2^63 or more, whose bits `i` holds and
+    // which would otherwise read as negative -- so that number(-1) and
+    // number(0xFFFFFFFFFFFFFFFF) stay two different features, as they are in capa.
+    bool big = false;
 
     std::string access;  // Property: "read"/"write" (empty otherwise)
     int index = 0;       // operand index (encoded in name too)
@@ -97,6 +103,7 @@ struct Feature {
     // ---- factories (mirror capa's Feature subclasses) ----
     static Feature api(const std::string& v, const std::string& desc = "");
     static Feature number(std::int64_t v, const std::string& desc = "");
+    static Feature number_float(double v, const std::string& desc = "");
     static Feature offset(std::int64_t v, const std::string& desc = "");
     static Feature mnemonic(const std::string& v, const std::string& desc = "");
     static Feature operand_number(int idx, std::int64_t v, const std::string& desc = "");
@@ -118,7 +125,17 @@ struct Feature {
     static Feature os(const std::string& v, const std::string& desc = "");
     static Feature arch(const std::string& v, const std::string& desc = "");
     static Feature format(const std::string& v, const std::string& desc = "");
-    static Feature basic_block();
+    static Feature basic_block(const std::string& desc = "");
+
+    // Reinterprets an Int value as unsigned 64-bit, the way capa's backends report
+    // machine words: `number_u(f.i)` for a register or immediate read as uint64.
+    Feature& as_unsigned() {
+        if (vkind == ValueKind::Int && i < 0) big = true;
+        has_hash_ = false;
+        return *this;
+    }
+    // The Int value as Python would print it, e.g. "18446744073709551615".
+    std::string int_decimal() const;
 
     // `StringFactory`: "/pat/" or "/pat/i" -> Regex, else String.
     static Feature string_factory(const std::string& v, const std::string& desc = "");
@@ -137,7 +154,7 @@ struct Feature {
                 if (s != o.s) return false;
                 break;
             case ValueKind::Int:
-                if (i != o.i) return false;
+                if (i != o.i || big != o.big) return false;
                 break;
             case ValueKind::Float:
                 if (f != o.f) return false;

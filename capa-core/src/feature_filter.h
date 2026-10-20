@@ -68,10 +68,8 @@ private:
 
     std::unordered_set<Feature> exact_;
     std::vector<std::string> substrings_;
-    // Compiled once here rather than borrowed from engine.cpp's cache, which is private to
-    // it. A pattern that does not compile is dropped: eval_regex treats it as matching
-    // nothing, so it can keep no string alive either.
-    std::vector<std::shared_ptr<std::regex>> regexes_;
+    // Borrowed from compile_capa_regex's cache, which lives as long as the program.
+    std::vector<const std::regex*> regexes_;
 
     // A string is tested against every substring and regex in the ruleset, which is ~250
     // and ~700 of them. Distinct strings repeat heavily across a trace, so the answer is

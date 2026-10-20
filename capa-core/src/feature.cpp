@@ -12,9 +12,9 @@ std::size_t hash_combine(std::size_t h, std::size_t v) {
 }
 
 // capa.helpers.hex: "0x123ABC" upper case, "-0x..." for negatives.
-std::string hex_upper(std::int64_t n) {
+std::string hex_upper(std::int64_t n, bool big) {
     char buf[32];
-    if (n < 0) {
+    if (n < 0 && !big) {
         // negate in unsigned space: -n would overflow for INT64_MIN.
         std::snprintf(buf, sizeof(buf), "-0x%llX",
                       static_cast<unsigned long long>(0ull - static_cast<unsigned long long>(n)));
@@ -82,6 +82,16 @@ Feature Feature::number(std::int64_t v, const std::string& desc) {
     f.name = "number";
     f.vkind = ValueKind::Int;
     f.i = v;
+    f.description = desc;
+    return f;
+}
+
+Feature Feature::number_float(double v, const std::string& desc) {
+    Feature f;
+    f.type = FeatureType::Number;
+    f.name = "number";
+    f.vkind = ValueKind::Float;
+    f.f = v;
     f.description = desc;
     return f;
 }
@@ -290,11 +300,12 @@ Feature Feature::format(const std::string& v, const std::string& desc) {
     return f;
 }
 
-Feature Feature::basic_block() {
+Feature Feature::basic_block(const std::string& desc) {
     Feature f;
     f.type = FeatureType::BasicBlock;
     f.name = "basicblock";
     f.vkind = ValueKind::None;
+    f.description = desc;
     return f;
 }
 
@@ -319,6 +330,7 @@ std::size_t Feature::hash() const {
             break;
         case ValueKind::Int:
             h = hash_combine(h, std::hash<std::int64_t>{}(i));
+            h = hash_combine(h, big ? 1 : 0);
             break;
         case ValueKind::Float:
             h = hash_combine(h, std::hash<double>{}(f));
@@ -351,7 +363,7 @@ std::string Feature::get_value_str() const {
                 std::snprintf(buf, sizeof(buf), "%g", f);
                 return buf;
             }
-            return hex_upper(i);
+            return hex_upper(i, big);
         case FeatureType::String:
         case FeatureType::Substring:
             return escape_string(s);
@@ -361,9 +373,13 @@ std::string Feature::get_value_str() const {
             return hex_string_spaced(s);
         default:
             if (vkind == ValueKind::Str) return s;
-            if (vkind == ValueKind::Int) return std::to_string(i);
+            if (vkind == ValueKind::Int) return int_decimal();
             return "";
     }
+}
+
+std::string Feature::int_decimal() const {
+    return big ? std::to_string(static_cast<std::uint64_t>(i)) : std::to_string(i);
 }
 
 std::string Feature::str() const {

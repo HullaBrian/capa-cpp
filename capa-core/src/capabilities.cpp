@@ -14,8 +14,6 @@ namespace capa {
 
 namespace {
 
-constexpr std::size_t SPAN_SIZE = 20;
-
 // index each match in `matches` back into `features` as MatchedRule features, so
 // higher-scope / dependent rules can match on them.
 void index_matches_into(const RuleSet& ruleset, FeatureSet& features,
@@ -80,10 +78,9 @@ struct CallCapabilities {
 };
 
 CallCapabilities find_call_capabilities(const RuleSet& ruleset,
-                                        const ttd::TtdExtractor& extractor,
-                                        const ttd::ProcessHandle& ph,
-                                        const ttd::ThreadHandle& th,
-                                        const ttd::CallHandle& ch) {
+                                        const DynamicFeatureExtractor& extractor,
+                                        const ProcessHandle& ph, const ThreadHandle& th,
+                                        const CallHandle& ch) {
     FeatureSet features;
     for (const auto& [f, addr] : extractor.extract_call_features(ph, th, ch))
         features[f].insert(addr);
@@ -98,10 +95,11 @@ CallCapabilities find_call_capabilities(const RuleSet& ruleset,
 // sliding window over the last SPAN_SIZE calls (capa SpanOfCallsMatcher)
 class SpanOfCallsMatcher {
 public:
-    explicit SpanOfCallsMatcher(const RuleSet& ruleset) : ruleset_(ruleset) {}
+    SpanOfCallsMatcher(const RuleSet& ruleset, std::size_t span_size)
+        : ruleset_(ruleset), span_size_(span_size) {}
 
-    void next(const ttd::CallHandle& ch, const FeatureSet& call_features) {
-        if (window_.size() == SPAN_SIZE) {
+    void next(const CallHandle& ch, const FeatureSet& call_features) {
+        if (window_.size() == span_size_) {
             FeatureSet overflowing = std::move(window_.front());
             window_.pop_front();
             for (const auto& [f, vas] : overflowing) {
@@ -152,6 +150,7 @@ public:
 
 private:
     const RuleSet& ruleset_;
+    std::size_t span_size_;
     std::deque<FeatureSet> window_;
     FeatureSet current_;
     std::set<std::string> last_span_matches_;
@@ -165,28 +164,15 @@ struct ThreadCapabilities {
     MatchResults call_matches;
 };
 
-// "SEQ:STEPS" in hex, as the report writes positions; nullopt for an empty or malformed one.
-std::optional<std::pair<std::uint64_t, std::uint64_t>> parse_position(const std::string& text) {
-    const std::size_t colon = text.find(':');
-    if (colon == std::string::npos || colon == 0 || colon + 1 == text.size()) return std::nullopt;
-    char* end = nullptr;
-    const std::uint64_t seq = std::strtoull(text.c_str(), &end, 16);
-    if (end != text.c_str() + colon) return std::nullopt;
-    const std::uint64_t steps = std::strtoull(text.c_str() + colon + 1, &end, 16);
-    if (*end != '\0') return std::nullopt;
-    return std::make_pair(seq, steps);
-}
-
 ThreadCapabilities find_thread_capabilities(const RuleSet& ruleset,
-                                            const ttd::TtdExtractor& extractor,
-                                            const ttd::ProcessHandle& ph,
-                                            const ttd::ThreadHandle& th,
+                                            const DynamicFeatureExtractor& extractor,
+                                            const ProcessHandle& ph, const ThreadHandle& th,
                                             const FeatureFilter& filter,
-                                            MatchRetention& retention,
-                                            bool top_level_calls) {
+                                            MatchRetention& retention, bool top_level_calls,
+                                            std::size_t span_size) {
     FeatureSet features;
     MatchResults call_matches;
-    SpanOfCallsMatcher span_matcher(ruleset);
+    SpanOfCallsMatcher span_matcher(ruleset, span_size);
 
     // Return position of the top-level call running at the current point, if any. A TTD
     // report holds every call a thread made, including the ones an API made while carrying
@@ -199,12 +185,12 @@ ThreadCapabilities find_thread_capabilities(const RuleSet& ruleset,
 
     const std::size_t call_count = extractor.call_count(ph, th);
     for (std::size_t idx = 0; idx < call_count; ++idx) {
-        const ttd::CallHandle ch = extractor.call_at(ph, th, idx);
-        if (top_level_calls && ch.inner != nullptr) {
-            if (const auto at = parse_position(ch.inner->position)) {
-                if (open && *open <= *at) open.reset();
+        const CallHandle ch = extractor.call_at(ph, th, idx);
+        if (top_level_calls) {
+            if (const auto span = extractor.get_call_span(ph, th, ch)) {
+                if (open && *open <= span->position) open.reset();
                 if (open) continue;  // made inside another recorded call
-                open = parse_position(ch.inner->return_position);
+                open = span->return_position;
             }
         }
         CallCapabilities cc = find_call_capabilities(ruleset, extractor, ph, th, ch);
@@ -243,18 +229,18 @@ std::size_t count_locations(const FeatureSet& features) {
 }
 
 ProcessCapabilities find_process_capabilities(const RuleSet& ruleset,
-                                              const ttd::TtdExtractor& extractor,
-                                              const ttd::ProcessHandle& ph,
+                                              const DynamicFeatureExtractor& extractor,
+                                              const ProcessHandle& ph,
                                               const FeatureFilter& filter,
-                                              MatchRetention& retention,
-                                              bool top_level_calls) {
+                                              MatchRetention& retention, bool top_level_calls,
+                                              std::size_t span_size) {
     FeatureSet process_features;
     MatchResults thread_matches, span_matches, call_matches;
 
     for (const auto& th : extractor.get_threads(ph)) {
         ThreadCapabilities tc =
             find_thread_capabilities(ruleset, extractor, ph, th, filter, retention,
-                                     top_level_calls);
+                                     top_level_calls, span_size);
         merge_features(process_features, std::move(tc.features), filter);
         merge_matches(thread_matches, std::move(tc.thread_matches), retention);
         merge_matches(span_matches, std::move(tc.span_matches), retention);
@@ -279,7 +265,7 @@ struct FileCapabilities {
 };
 
 FileCapabilities find_file_capabilities(const RuleSet& ruleset,
-                                        const ttd::TtdExtractor& extractor,
+                                        const DynamicFeatureExtractor& extractor,
                                         FeatureSet&& function_features,
                                         const FeatureFilter& filter) {
     FeatureSet file_features;
@@ -308,18 +294,20 @@ FileCapabilities find_file_capabilities(const RuleSet& ruleset,
 }  // namespace
 
 Capabilities find_dynamic_capabilities(const RuleSet& ruleset,
-                                       const ttd::TtdExtractor& extractor,
+                                       const DynamicFeatureExtractor& extractor,
                                        const FeatureFilter& filter,
                                        std::size_t max_match_trees,
                                        bool keep_evidence_leaves,
-                                       bool top_level_calls) {
+                                       bool top_level_calls,
+                                       std::size_t span_size) {
     MatchRetention retention(max_match_trees, keep_evidence_leaves);
     MatchResults all_process, all_thread, all_span, all_call;
     Capabilities caps;
 
     for (const auto& ph : extractor.get_processes()) {
         ProcessCapabilities pc =
-            find_process_capabilities(ruleset, extractor, ph, filter, retention, top_level_calls);
+            find_process_capabilities(ruleset, extractor, ph, filter, retention, top_level_calls,
+                                      span_size);
         caps.process_feature_counts.emplace_back(ph.address, pc.feature_count);
         caps.peak_scope_features = std::max(caps.peak_scope_features, pc.feature_count);
         caps.peak_scope_locations = std::max(caps.peak_scope_locations, pc.location_count);

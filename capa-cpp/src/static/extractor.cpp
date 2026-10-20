@@ -319,8 +319,10 @@ std::vector<FeaturePair> StaticExtractor::extract_insn_features(const Function& 
                 ops[0].reg_is_sp)
                 skip = true;
             if (!skip) {
-                add(out, Feature::number(v), ih);
-                add(out, Feature::operand_number(static_cast<int>(i), v), ih);
+                // The immediate is masked to its operand width, like viv's: an unsigned
+                // machine word, which is how capa compares it against a rule's number.
+                add(out, Feature::number(v).as_unsigned(), ih);
+                add(out, Feature::operand_number(static_cast<int>(i), v).as_unsigned(), ih);
                 if (insn.mnem == "add" && v > 0 && v < MAX_STRUCTURE_SIZE &&
                     oper.kind == OperKind::Imm) {
                     add(out, Feature::offset(v), ih);

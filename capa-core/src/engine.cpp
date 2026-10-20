@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <regex>
 
+#include "pyregex.h"
+
 namespace capa {
 
 namespace {
@@ -15,48 +17,6 @@ Result feature_result(const Feature& feat, bool success, AddressSet locations) {
     r.feature = feat;
     r.locations = std::move(locations);
     return r;
-}
-
-// Compile a capa regex value ("/pat/" or "/pat/i") to std::regex, once, caching by the
-// raw value. The same rule regex is evaluated across every call/span, so compiling it
-// each time is a major cost; the cache makes it a one-time price.
-//
-// Note: capa uses Python regex (DOTALL always on). We approximate with ECMAScript
-// grammar; most patterns carry over, but exotic Python-only constructs may differ.
-// Compilation failures cache a null (never-match) entry.
-//
-// Single-threaded matcher, so a plain static cache is safe.
-const std::regex* compiled_regex(const std::string& value) {
-    static std::unordered_map<std::string, std::unique_ptr<std::regex>> cache;
-    auto it = cache.find(value);
-    if (it != cache.end()) return it->second.get();
-
-    std::unique_ptr<std::regex> compiled;
-    bool ci = false;
-    std::string pat;
-    bool ok = true;
-    if (value.size() < 2 || value.front() != '/') {
-        ok = false;
-    } else if (value.size() >= 3 && value.back() == 'i' && value[value.size() - 2] == '/') {
-        ci = true;
-        pat = value.substr(1, value.size() - 3);
-    } else if (value.back() == '/') {
-        pat = value.substr(1, value.size() - 2);
-    } else {
-        ok = false;
-    }
-    if (ok) {
-        auto flags = std::regex::ECMAScript | std::regex::optimize;
-        if (ci) flags |= std::regex::icase;
-        try {
-            compiled = std::make_unique<std::regex>(pat, flags);
-        } catch (const std::regex_error&) {
-            compiled.reset();
-        }
-    }
-    const std::regex* ptr = compiled.get();
-    cache.emplace(value, std::move(compiled));
-    return ptr;
 }
 
 Result eval_substring(const Feature& feat, const FeatureSet& features) {
@@ -83,8 +43,11 @@ Result eval_substring(const Feature& feat, const FeatureSet& features) {
     return r;
 }
 
+// capa.features.common.Regex.evaluate. The pattern is Python's, compiled with re.DOTALL
+// (and re.IGNORECASE for /i); see pyregex.h for how it is carried over to std::regex. A
+// pattern std::regex cannot express matches nothing -- the rule loader has already said so.
 Result eval_regex(const Feature& feat, const FeatureSet& features) {
-    const std::regex* re = compiled_regex(feat.s);
+    const std::regex* re = compile_capa_regex(feat.s);
     std::map<std::string, AddressSet> matches;
     if (re) {
         for (const auto& [f, locs] : features) {
@@ -110,24 +73,47 @@ Result eval_regex(const Feature& feat, const FeatureSet& features) {
     return r;
 }
 
+// capa's Bytes.evaluate and OS.evaluate stop at the *first* qualifying feature of the
+// scope's feature set and report only its locations. "First" is Python dict order: the
+// order features were first inserted, which the capabilities walk makes the order they
+// were first seen -- functions, blocks and instructions in ascending address. A hash map
+// has no such order, so the equivalent is chosen explicitly: the qualifying feature seen
+// earliest, i.e. with the lowest location (features with no location last, then by
+// value, so the choice never depends on hashing).
+const AddressSet* first_seen(const AddressSet* best, const Feature*& best_feature, const Feature& f,
+                             const AddressSet& locs) {
+    auto earlier = [&]() {
+        if (!best) return true;
+        if (locs.empty() != best->empty()) return !locs.empty();
+        if (!locs.empty() && *locs.begin() != *best->begin()) return *locs.begin() < *best->begin();
+        return f.s < best_feature->s;
+    };
+    if (!earlier()) return best;
+    best_feature = &f;
+    return &locs;
+}
+
 Result eval_bytes(const Feature& feat, const FeatureSet& features) {
+    const AddressSet* best = nullptr;
+    const Feature* best_feature = nullptr;
     for (const auto& [f, locs] : features) {
         if (f.type != FeatureType::Bytes) continue;
         // extracted value startswith the rule's bytes value
-        if (f.s.size() >= feat.s.size() && f.s.compare(0, feat.s.size(), feat.s) == 0) {
-            return feature_result(feat, true, locs);
-        }
+        if (f.s.size() >= feat.s.size() && f.s.compare(0, feat.s.size(), feat.s) == 0)
+            best = first_seen(best, best_feature, f, locs);
     }
+    if (best) return feature_result(feat, true, *best);
     return feature_result(feat, false, {});
 }
 
 Result eval_os(const Feature& feat, const FeatureSet& features) {
+    const AddressSet* best = nullptr;
+    const Feature* best_feature = nullptr;
     for (const auto& [f, locs] : features) {
         if (f.type != FeatureType::OS) continue;
-        if (feat.s == OS_ANY || f.s == OS_ANY || feat.s == f.s) {
-            return feature_result(feat, true, locs);
-        }
+        if (feat.s == OS_ANY || f.s == OS_ANY || feat.s == f.s) best = first_seen(best, best_feature, f, locs);
     }
+    if (best) return feature_result(feat, true, *best);
     return feature_result(feat, false, {});
 }
 
@@ -222,8 +208,10 @@ Result eval_statement(const Statement& stmt, const FeatureSet& features, bool sh
                         return r;
                     }
                 }
-                // count==0 with no children still succeeds
-                r.success = satisfied >= stmt.count;
+                // capa.engine.Some: the threshold is only tested after a child has been
+                // evaluated, so a short-circuit `optional:` with no children is false --
+                // and match() only keeps a rule whose short-circuit evaluation succeeds.
+                r.success = false;
             } else {
                 for (const auto& child : stmt.children) {
                     Result cr = eval_node(child, features, short_circuit);

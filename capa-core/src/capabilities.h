@@ -3,6 +3,9 @@
 // Ports capa/capabilities/dynamic.py (+ find_file_capabilities from common.py):
 // walks process -> thread -> call, matching rules at each scope and bubbling both
 // features and rule matches upward, plus the sliding-window SpanOfCallsMatcher.
+//
+// Backend-neutral: it drives any DynamicFeatureExtractor -- the TTD backend, or a
+// freeze file through NullDynamicFeatureExtractor.
 #pragma once
 
 #include <cstddef>
@@ -13,8 +16,8 @@
 #include "engine.h"
 #include "feature_filter.h"
 #include "match_retention.h"
+#include "feature_extractor.h"
 #include "rules.h"
-#include "ttd/extractor.h"
 
 namespace capa {
 
@@ -59,9 +62,15 @@ struct Capabilities {
 // `top_level_calls` (`--top-level-calls`) matches only calls made outside every other recorded
 // call on their thread: the calls the program made, not the ones an API made while carrying one
 // out. See find_thread_capabilities.
-Capabilities find_dynamic_capabilities(const RuleSet& ruleset, const ttd::TtdExtractor& extractor,
+//
+// `span_size` is capa.capabilities.dynamic.SPAN_SIZE; only tests change it.
+inline constexpr std::size_t DEFAULT_SPAN_SIZE = 20;
+
+Capabilities find_dynamic_capabilities(const RuleSet& ruleset,
+                                       const DynamicFeatureExtractor& extractor,
                                        const FeatureFilter& filter, std::size_t max_match_trees,
                                        bool keep_evidence_leaves = false,
-                                       bool top_level_calls = false);
+                                       bool top_level_calls = false,
+                                       std::size_t span_size = DEFAULT_SPAN_SIZE);
 
 }  // namespace capa

@@ -1,37 +1,10 @@
 #include "feature_filter.h"
 
 #include "engine.h"
+#include "pyregex.h"
 #include "rules.h"
 
 namespace capa {
-
-namespace {
-
-// Same spelling eval_regex accepts: /pattern/ or /pattern/i. Anything else is not a
-// regex it can use, and compiles to nothing here for the same reason.
-std::shared_ptr<std::regex> compile_rule_regex(const std::string& value) {
-    bool ignore_case = false;
-    std::string pattern;
-    if (value.size() < 2 || value.front() != '/') return nullptr;
-    if (value.size() >= 3 && value.back() == 'i' && value[value.size() - 2] == '/') {
-        ignore_case = true;
-        pattern = value.substr(1, value.size() - 3);
-    } else if (value.back() == '/') {
-        pattern = value.substr(1, value.size() - 2);
-    } else {
-        return nullptr;
-    }
-
-    auto flags = std::regex::ECMAScript | std::regex::optimize;
-    if (ignore_case) flags |= std::regex::icase;
-    try {
-        return std::make_shared<std::regex>(pattern, flags);
-    } catch (const std::regex_error&) {
-        return nullptr;
-    }
-}
-
-}  // namespace
 
 FeatureFilter FeatureFilter::from_ruleset(const RuleSet& ruleset) {
     FeatureFilter filter;
@@ -59,8 +32,10 @@ void FeatureFilter::add_leaf(const Feature& feature) {
             substrings_.push_back(feature.s);
             return;
         case FeatureType::Regex:
-            if (std::shared_ptr<std::regex> compiled = compile_rule_regex(feature.s))
-                regexes_.push_back(std::move(compiled));
+            // The same compiled pattern eval_regex uses. One that does not compile
+            // matches nothing there, so it can keep no string alive here either.
+            if (const std::regex* compiled = compile_capa_regex(feature.s))
+                regexes_.push_back(compiled);
             return;
         default:
             exact_.insert(feature);
@@ -80,7 +55,7 @@ bool FeatureFilter::keep_string(const std::string& value) const {
         }
     }
     if (!wanted) {
-        for (const std::shared_ptr<std::regex>& pattern : regexes_) {
+        for (const std::regex* pattern : regexes_) {
             // MSVC's std::regex is a backtracking engine with a complexity ceiling, and it
             // throws rather than reporting no-match when a long string pushes a pattern
             // past it. That happens here and not in eval_regex because this tries every
