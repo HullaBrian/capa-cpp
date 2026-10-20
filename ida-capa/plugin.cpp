@@ -45,6 +45,9 @@ const char* const MENUBAR_PATH = "CAPA C++/";
 const char* const MENU_ACTIONS[] = {
     ACTION_SHOW,
     ACTION_ANALYZE,
+    // Here as well as in the explorer window: the analysis that reports skipped system
+    // modules can end with no results, and then there is no window to right-click.
+    ACTION_SCAN_SYSTEM,
     ACTION_ANNOTATE,
     ACTION_UNANNOTATE,
 };
@@ -508,7 +511,7 @@ void PluginCtx::toggle_scan_system_modules() {
     set_scan_system_modules(!scan_system());
     if (m_have_results)
         info("capa: system modules will %s the next analysis.\n"
-             "Re-run \"Analyze with capa\" (Alt-F5) to apply this.",
+             "Re-run Edit > Plugins > CAPA C++ > Analyze to apply this.",
              scan_system() ? "be included in" : "be excluded from");
 }
 

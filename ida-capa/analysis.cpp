@@ -606,7 +606,8 @@ bool run_analysis(const std::string& rules_dir, ResultsDoc& out, std::string& er
                     static_cast<int>(extractor.skipped_system_functions()),
                     static_cast<int>(mods.size()), names.c_str());
             msg("capa: %s\n", out.skipped_note.c_str());
-            msg("capa: use \"Scan Windows system modules\" to include them.\n");
+            msg("capa: to include them, tick Edit > Plugins > CAPA C++ > \"Scan Windows "
+                "system modules\" and analyze again.\n");
         }
     } catch (const Cancelled&) {
         return false;  // user's choice; no error message
