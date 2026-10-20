@@ -3,11 +3,18 @@
 #include <algorithm>
 #include <utility>
 
+#if defined(_WIN32)
 // windows.h is here only for the file mapping. NOMINMAX because its min/max macros
 // otherwise eat the std::min below -- and every other one in this translation unit.
 #define NOMINMAX
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
+#else
+#include <fcntl.h>
+#include <sys/mman.h>
+#include <sys/stat.h>
+#include <unistd.h>
+#endif
 
 namespace capa::stat {
 
@@ -22,6 +29,7 @@ MappedFile& MappedFile::operator=(MappedFile&& o) noexcept {
     return *this;
 }
 
+#if defined(_WIN32)
 void MappedFile::close() {
     if (data_ != nullptr) ::UnmapViewOfFile(data_);
     if (mapping_ != nullptr) ::CloseHandle(mapping_);
@@ -66,6 +74,33 @@ bool MappedFile::open(const std::string& path) {
     size_ = static_cast<std::size_t>(sz.QuadPart);
     return true;
 }
+#else
+void MappedFile::close() {
+    if (data_ != nullptr) ::munmap(const_cast<std::uint8_t*>(data_), size_);
+    data_ = nullptr;
+    size_ = 0;
+}
+
+bool MappedFile::open(const std::string& path) {
+    close();
+    int fd = ::open(path.c_str(), O_RDONLY | O_CLOEXEC);
+    if (fd < 0) return false;
+    struct stat st {};
+    if (::fstat(fd, &st) != 0 || st.st_size <= 0 ||
+        static_cast<std::uint64_t>(st.st_size) > static_cast<std::uint64_t>(SIZE_MAX)) {
+        ::close(fd);
+        return false;
+    }
+    const auto sz = static_cast<std::size_t>(st.st_size);
+    // The mapping holds its own reference to the file, so the descriptor can go now.
+    void* view = ::mmap(nullptr, sz, PROT_READ, MAP_PRIVATE, fd, 0);
+    ::close(fd);
+    if (view == MAP_FAILED) return false;
+    data_ = static_cast<const std::uint8_t*>(view);
+    size_ = sz;
+    return true;
+}
+#endif
 
 
 namespace {

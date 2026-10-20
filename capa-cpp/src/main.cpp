@@ -66,9 +66,10 @@ static std::string timing_memory_suffix() {
     const capa::MemUsage m = capa::process_memory();
     if (m.peak_working_set == 0) return {};
     char buf[96];
-    std::snprintf(buf, sizeof(buf), "  rss %6.0f MB  peak %6.0f MB  commit %6.0f MB",
-                  m.working_set / 1048576.0, m.peak_working_set / 1048576.0,
-                  m.peak_commit / 1048576.0);
+    int n = std::snprintf(buf, sizeof(buf), "  rss %6.0f MB  peak %6.0f MB",
+                          m.working_set / 1048576.0, m.peak_working_set / 1048576.0);
+    if (m.peak_commit != 0)
+        std::snprintf(buf + n, sizeof(buf) - n, "  commit %6.0f MB", m.peak_commit / 1048576.0);
     return buf;
 }
 

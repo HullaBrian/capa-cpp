@@ -6,9 +6,10 @@
 // structures here are transient (a JSON DOM freed the moment the model is built, a
 // match corpus copied and dropped), so a reading taken between stages sees none of them.
 //
-// Windows-only, and deliberately behind its own translation unit: <psapi.h> drags in
+// Deliberately behind its own translation unit: on Windows <psapi.h> drags in
 // <windows.h>, whose min/max macros and Feature/Result-adjacent typedefs have no
-// business in the rest of the codebase.
+// business in the rest of the codebase. Linux reads /proc/self/status and has no peak
+// commit counter; other platforms report zeros.
 #pragma once
 
 #include <cstdint>
@@ -17,7 +18,7 @@ namespace capa {
 
 struct MemUsage {
     std::uint64_t peak_working_set = 0;  // bytes, high-water RSS
-    std::uint64_t peak_commit = 0;       // bytes, high-water private commit
+    std::uint64_t peak_commit = 0;       // bytes, high-water private commit (Windows only)
     std::uint64_t working_set = 0;       // bytes, current RSS
 };
 
