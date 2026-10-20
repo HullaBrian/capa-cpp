@@ -11,7 +11,8 @@ the same JSON result document as capa**. capa (the Python implementation) is the
 reference; any difference from it is a bug. See [Verifying parity](#verifying-parity) for how
 that is checked and what currently passes.
 
-It is also driven by other tools, such as ttd-capa, and runs as an IDA plugin.
+It is also driven by other tools, such as
+[ttd-capa-cpp](https://github.com/HullaBrian/ttd-capa-cpp), and runs as an IDA plugin.
 
 Inputs:
 - capa freeze files (`.frz`) from any capa backend: vivisect, IDA, dnfile (.NET), CAPE, DRAKVUF, VMRay, ...
@@ -28,7 +29,7 @@ analysis backend in it: rules in, features in, result document out.
 | Input | Backend | Scopes |
 |---|---|---|
 | capa freeze file (`.frz`) | none: replays features another backend extracted (capa's `NullFeatureExtractor`) | static or dynamic, as frozen |
-| TTD report JSON (from `ttd-capa`) | Parses recorded API calls | process / thread / span of calls / call |
+| TTD report JSON (from `ttd-capa-cpp`) | Parses recorded API calls | process / thread / span of calls / call |
 | TTD `--scan-code` manifest + `.bin` snapshots | Disassembles reconstructed code (unpacked, injected, JIT'd) with [Zydis](https://github.com/zyantific/zydis) | file / function / basic block / instruction |
 | Process minidump (`.dmp`) | Parses loaded modules and executable memory, disassembles with Zydis | file / function / basic block / instruction |
 | IDA database | uses IDA's CFG, imports, exports, strings and FLIRT names | file / function / basic block / instruction |
@@ -116,7 +117,7 @@ installed somewhere else.
 ## Usage
 ### Command Line (`capa-cpp.exe`)
 The command line accepts **capa freeze files, TTD reports or Windows process memory dumps**. It
-does not read a raw TTD trace: ttd-capa turns the trace into a JSON report and, for code
+does not read a raw TTD trace: ttd-capa-cpp turns the trace into a JSON report and, for code
 scanning, a code manifest and memory snapshots.
 
 A freeze file holds the features some backend extracted from one sample; capa writes one with
@@ -275,7 +276,7 @@ reproduce, and why.
   values, validated per scope, and optimized as capa does.
 - capa's freeze format, static and dynamic, read and written.
 - capa's result document, member for member.
-- Any capa backend's features through freeze files, including .NET (dnfile) and the sandbox
+- Any capa backend's features through **freeze files**, including .NET (dnfile) and the sandbox
   formats (CAPE, DRAKVUF, VMRay).
 - TTD static and dynamic analysis of x86/x64 traces given the proper manifests/reports
 - Process minidumps: full x86/x64 dumps, including private RWX shellcode regions.
@@ -293,7 +294,9 @@ reproduce, and why.
 - Plain-text tables instead of capa's Rich formatting (only the JSON is part of the contract).
 - IDA plugin limits:
   - x86/x64 only.
-  - No ELF OS detection.
+  - ELF files get no `os` feature: capa's `detect_elf_os`, which reads the ELF headers to tell
+    Linux, the BSDs and other systems apart, isn't ported, so rules that require `os: linux`
+    (or any other OS) never match an ELF file.
   - No rule generator.
   - Matches with a MAEC analysis conclusion aren't filtered out.
   - The UI uses IDA's own form, chooser and dirtree instead of Qt.
